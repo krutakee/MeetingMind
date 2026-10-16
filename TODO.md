@@ -1,8 +1,7 @@
 # TODO — MeetingMind
 
 Phase breakdown follows [SPEC.md](SPEC.md) Section 11. Only the current phase is broken down in detail;
-later phases are expanded when they start. Phase 1 is done (2026-10-16). Phases 2-5 are not started; Phase 2 needs a plan
-and approval first.
+later phases are expanded when they start. Phase 1 is done (2026-10-16). Phase 2 is in progress (plan approved 2026-10-16); Phases 3-5 are not started.
 
 ## Open questions / blockers
 - [ ] **Old prototype path.** SPEC.md Section 13 step 2 has an unfilled `[TODO: path to old project folder]`.
@@ -51,7 +50,7 @@ and approval first.
 - [x] Update CLAUDE.md "Commands" with the commands actually verified.
 - [x] Run all tests, commit, write the phase report (what works / doesn't / blocked / machine used), stop.
 
-## Phase 2 — Windows recording (PLAN AWAITING APPROVAL — no code until approved)
+## Phase 2 — Windows recording (plan approved 2026-10-16; M0 in progress)
 Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.md). Milestones end with passing tests and a commit.
 
 - [ ] **M0 Spikes:** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);

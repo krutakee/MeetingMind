@@ -1,6 +1,6 @@
 # Phase 2 plan — Windows recording
 
-**Status: plan awaiting approval. No Phase 2 code has been written.**
+**Status: approved 2026-10-16. Work starts with M0 (spikes). Hotkeys changed in review: see Section 10.**
 Scope and acceptance criteria come from SPEC.md Sections 5 and 11 and do not change here. This document says how
 they will be met, what was checked, what is still unverified, and what needs a decision.
 
@@ -119,7 +119,7 @@ Own windows are excluded with `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`
   level meters, Pause and Stop. Created when recording starts and closed at the end.
 - **Tray icon:** idle / recording / paused states, menu with Start, Pause, Stop, Open, Quit.
 - **Global hotkeys:** start/stop and pause/resume, configurable in Settings, with a clear message when a combination
-  is already taken. Proposed defaults in decision 5.
+  is already taken. Defaults are in Section 10.
 - **Consent reminder:** a dialog before recording starts, controlled by the existing setting.
 - **Recovery prompt:** at launch if an unfinished recording is found.
 - **Playback:** after stopping, "Recording saved" with Play and Open folder. The Record screen lists the 10 most
@@ -207,14 +207,21 @@ tests and only has to compile.
 6. **Unverified assumptions** (M0 exists to settle them): FFmpeg encoder list, cpal timestamp quality, whether the
    adaptive resampler holds the 100 ms budget, behaviour of `h264_mf` with this machine's Intel graphics.
 
-## 10. Decisions needed
+## 10. Decisions (2026-10-16)
 
-| # | Decision | Recommendation |
+The plan was approved. The recommendations below were accepted, except the hotkeys, which were changed.
+
+| # | Decision | Outcome |
 |---|---|---|
-| 1 | Approve the plan overall, including one FFmpeg process per stream plus a final mux. | Approve. |
-| 2 | SPEC says to fall back to OpenH264. Prefer `h264_mf` first (hardware, else Microsoft's software encoder), OpenH264 only as a second fallback if the build has it? | Yes. It needs no extra library for most machines. |
-| 3 | FFmpeg source: pinned BtbN LGPL release now, custom minimal build later? | Yes. |
-| 4 | Hardware for the unplug test, and 2+ hours of idle machine time for the soak test. | Provide both when I ask. |
-| 5 | Defaults: hotkeys Ctrl+Shift+F9 (start/stop) and Ctrl+Shift+F10 (pause/resume); disk warn 2 GB / stop 500 MB; display kept on during screen recording; own windows hidden from capture only while recording; black frames during lock or monitor loss; pause stops all devices. | Accept, all adjustable later. |
-| 6 | Playback and "10 most recent recordings" live on the Record screen; Library stays Phase 4. | Yes. |
-| 7 | Add `tauri-plugin-single-instance` so two copies cannot record at once. | Yes. |
+| 1 | Overall plan, one FFmpeg process per stream plus a final mux. | Approved. |
+| 2 | `h264_mf` first (hardware, else Microsoft software encoder), OpenH264 only as a second fallback. | Accepted. |
+| 3 | Pinned BtbN LGPL FFmpeg now, custom minimal build later. | Accepted. |
+| 4 | Hardware for the unplug test, 2+ hours of idle machine time for the soak test. | Accepted. To be requested when needed. |
+| 5 | Defaults. | **Hotkeys: Ctrl+Shift+S start/stop, Ctrl+Shift+P pause/resume** (changed from F9/F10). Disk warn 2 GB, stop 500 MB; display kept on during screen recording; own windows hidden from capture only while recording; black frames during lock or monitor loss; pause stops all devices. All accepted. |
+| 6 | Playback and the 10 most recent recordings on the Record screen; Library stays Phase 4. | Accepted. |
+| 7 | `tauri-plugin-single-instance`. | Accepted. |
+
+Hotkey caveat. A global shortcut takes its key combination away from every other program while MeetingMind is
+running. Ctrl+Shift+S is "Save As" in many programs and Ctrl+Shift+P opens the command palette in VS Code; pressing
+them there would start a recording or pause one. The app cannot detect this kind of clash (registration succeeds), so
+the combinations are configurable in Settings, and the recording indicator makes an accidental start visible.
