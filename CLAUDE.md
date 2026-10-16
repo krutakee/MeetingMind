@@ -33,17 +33,13 @@ The frontend `dist/` folder (repo root) must exist before any cargo command: run
 - Rust lint/format: `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` (from `src-tauri/`)
 - Regenerate `LICENSES.md` after any dependency change: `pnpm licenses:generate`
 
-## Current phase: Phase 1 — App shell (plan approved 2026-10-16; implemented, waiting for the first CI run)
-Scope: Tauri + React app, navigation, settings, SQLite with migrations, logging, capability-detection
-skeleton, CI on Windows and macOS.
+## Current phase: Phase 1 — App shell: DONE (2026-10-16). Next: Phase 2 — Windows recording
+Phase 1 delivered: Tauri + React app, navigation, settings, SQLite with migrations, logging, capability-detection
+skeleton, CI on Windows and macOS. Acceptance: app launches on Windows (checked locally); CI green on `windows-latest`
+and `macos-latest` (run 38941862010, commit f1edde7); migration tests pass (locally and in CI).
 
-Done when:
-- The app launches on Windows.
-- CI is green on both `windows-latest` and `macos-latest`.
-- Migration tests pass.
-
-Then: run tests, commit, report what works / what doesn't / what's blocked, and STOP.
-Phases 2–5 and their acceptance criteria are in SPEC.md Section 11 and ROADMAP.md.
+Phase 2 has no plan yet. Write the plan, get it approved, then code. Its scope and acceptance criteria are in
+SPEC.md Section 11 and ROADMAP.md. Per phase: run tests, commit, report what works / what doesn't / what's blocked, STOP.
 
 ## Architecture rules
 - OS-specific code lives only in the capture, audio and system-integration modules, behind traits.

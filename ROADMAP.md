@@ -10,7 +10,7 @@ Default models on this class: live = Whisper `small` (multilingual); final pass 
 
 | Phase | Goal | Status |
 |---|---|---|
-| 1 | App shell | in progress |
+| 1 | App shell | done (2026-10-16) |
 | 2 | Windows recording | not started |
 | 3 | Live transcription | not started |
 | 4 | Save, export, library (MVP complete) | not started |
