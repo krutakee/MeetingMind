@@ -38,7 +38,7 @@ Phase 1 delivered: Tauri + React app, navigation, settings, SQLite with migratio
 skeleton, CI on Windows and macOS. Acceptance: app launches on Windows (checked locally); CI green on `windows-latest`
 and `macos-latest` (run 38941862010, commit f1edde7); migration tests pass (locally and in CI).
 
-Phase 2 has no plan yet. Write the plan, get it approved, then code. Its scope and acceptance criteria are in
+Phase 2 plan is written and awaiting approval: docs/phase-2-plan.md. No Phase 2 code until approved. Scope and acceptance criteria are in
 SPEC.md Section 11 and ROADMAP.md. Per phase: run tests, commit, report what works / what doesn't / what's blocked, STOP.
 
 ## Architecture rules

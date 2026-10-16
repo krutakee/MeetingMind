@@ -51,15 +51,22 @@ and approval first.
 - [x] Update CLAUDE.md "Commands" with the commands actually verified.
 - [x] Run all tests, commit, write the phase report (what works / doesn't / blocked / machine used), stop.
 
-## Phase 2 — Windows recording (not started)
-- [ ] Screen + audio and audio-only modes; one monotonic clock; pause semantics (paused time cut).
-- [ ] Mic (`cpal`) and system audio (WASAPI loopback) as separate FLAC tracks plus mixed MP4/M4A.
-- [ ] FFmpeg LGPL sidecar; hardware H.264 with OpenH264 fallback.
-- [ ] Crash-safe fragmented MP4 + recovery on next launch.
-- [ ] Own-window exclusion (`WDA_EXCLUDEFROMCAPTURE`), sleep prevention, device-change handling, disk-space thresholds.
-- [ ] Setup screen/presets, controls, always-on-top control window, hotkeys, tray icon, consent reminder.
-- [ ] Basic playback.
+## Phase 2 — Windows recording (PLAN AWAITING APPROVAL — no code until approved)
+Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.md). Milestones end with passing tests and a commit.
+
+- [ ] **M0 Spikes:** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);
+      real WGC frames; cpal mic + loopback timestamps/formats; 10-minute drift measurement; findings in `docs/`.
+- [ ] **M1 Core (no hardware):** clock + pause accounting, state machine, video pacer, drift correction, folder layout +
+      title sanitization, `meeting.json` v1 + docs, migration 0002 (presets), disk guard, FFmpeg process manager + GPL-build
+      guard, synthetic test sources, end-to-end + kill/recovery tests.
+- [ ] **M2 Windows sources:** `capture` (WGC) and `audio` (cpal mic + loopback) implementations; sleep guard; own-window
+      exclusion (only while recording); session lock events; free disk space; capability probe fills system audio,
+      capture exclusion, video encoders.
+- [ ] **M3 UI:** Record screen (setup, monitor preview, presets, estimates), always-on-top control window, tray icon, global
+      hotkeys, consent dialog, warning banners, recovery prompt, playback + 10 recent recordings, single-instance.
+- [ ] **M4 Acceptance + docs:** the four criteria below, `LICENSES.md`, CI (fetch/cache sidecar, FFmpeg tests on Windows runner), phase report.
 - [ ] Acceptance: 2-hour drift < 100 ms and flat memory; kill-mid-recording recoverable; mic unplug survives; control window not in video.
+      Needs from the user: 2+ hours of idle machine time, and an external USB/3.5 mm microphone to unplug.
 
 ## Phase 3 — Live transcription (not started)
 - [ ] Bounded audio queues, 16 kHz mono resample for Whisper only, WebRTC echo cancellation, Silero VAD.

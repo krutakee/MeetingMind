@@ -11,7 +11,7 @@ Default models on this class: live = Whisper `small` (multilingual); final pass 
 | Phase | Goal | Status |
 |---|---|---|
 | 1 | App shell | done (2026-10-16) |
-| 2 | Windows recording | not started |
+| 2 | Windows recording | plan awaiting approval ([docs/phase-2-plan.md](docs/phase-2-plan.md)) |
 | 3 | Live transcription | not started |
 | 4 | Save, export, library (MVP complete) | not started |
 | 5 | macOS | not started |
