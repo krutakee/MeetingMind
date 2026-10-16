@@ -7,6 +7,17 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+/// The H.264 encoder to test with. `MEETINGMIND_TEST_H264` (hardware, openh264 or software) forces one, to mimic a
+/// machine without a GPU (a CI runner) on a machine that has one.
+fn pick_encoder(info: &FfmpegInfo) -> H264Kind {
+    match std::env::var("MEETINGMIND_TEST_H264").ok().as_deref() {
+        Some("hardware") => H264Kind::HardwareMf,
+        Some("openh264") => H264Kind::OpenH264,
+        Some("software") => H264Kind::SoftwareMf,
+        _ => ffmpeg::select_h264(info).expect("some H.264 encoder works"),
+    }
+}
+
 use meetingmind_lib::recording::ffmpeg::{
     self, FfmpegInfo, FinalizeInputs, H264Kind, SendOutcome, StreamEncoder, VideoParams,
 };
@@ -88,7 +99,13 @@ fn assert_close(actual: Duration, expected: f64, tolerance: f64, what: &str) {
     );
 }
 
-fn record_video(ffmpeg: &FfmpegInfo, kind: H264Kind, frames: u32, output: &Path) -> StreamEncoder {
+/// Feeds `frames` frames to a new video encoder. `Err` if the encoder could not run here (it exited while being fed).
+fn record_video(
+    ffmpeg: &FfmpegInfo,
+    kind: H264Kind,
+    frames: u32,
+    output: &Path,
+) -> Result<StreamEncoder, String> {
     let encoder = StreamEncoder::spawn(
         "video",
         &ffmpeg.path,
@@ -102,11 +119,13 @@ fn record_video(ffmpeg: &FfmpegInfo, kind: H264Kind, frames: u32, output: &Path)
             match encoder.try_send(frame(i)) {
                 SendOutcome::Queued => break,
                 SendOutcome::Dropped => std::thread::sleep(Duration::from_millis(5)),
-                SendOutcome::EncoderFailed => panic!("the video encoder failed"),
+                SendOutcome::EncoderFailed => {
+                    return Err(format!("{} exited while being fed", kind.label()));
+                }
             }
         }
     }
-    encoder
+    Ok(encoder)
 }
 
 #[test]
@@ -128,9 +147,10 @@ fn video_frames_become_a_playable_fragmented_mp4_of_the_right_length() {
     };
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("video.mp4");
-    let kind = ffmpeg::select_h264(&info).unwrap();
+    let kind = pick_encoder(&info);
 
     record_video(&info, kind, 45, &out)
+        .expect("the selected encoder runs")
         .finish(Duration::from_secs(30))
         .unwrap();
 
@@ -151,8 +171,12 @@ fn every_h264_encoder_that_works_here_produces_the_same_length() {
     let mut tried = 0;
     for kind in H264Kind::PREFERENCE {
         let out = dir.path().join(format!("{kind:?}.mp4"));
-        let encoder = record_video(&info, kind, 30, &out);
-        match encoder.finish(Duration::from_secs(30)) {
+        let finished = record_video(&info, kind, 30, &out).and_then(|encoder| {
+            encoder
+                .finish(Duration::from_secs(30))
+                .map_err(|e| e.to_string())
+        });
+        match finished {
             Ok(()) => {
                 tried += 1;
                 assert_close(
@@ -206,8 +230,9 @@ fn the_final_mux_mixes_two_tracks_and_copies_the_video() {
         dir.path().join("mic.flac"),
         dir.path().join("sys.flac"),
     );
-    let kind = ffmpeg::select_h264(&info).unwrap();
+    let kind = pick_encoder(&info);
     record_video(&info, kind, 45, &video)
+        .expect("the selected encoder runs")
         .finish(Duration::from_secs(30))
         .unwrap();
     for (name, track) in [("mic", &mic), ("sys", &system)] {
@@ -333,7 +358,7 @@ fn files_survive_a_hard_kill_and_can_be_repaired() {
     let dir = tempfile::tempdir().unwrap();
     let video = dir.path().join("video.mp4");
     let flac = dir.path().join("mic.flac");
-    let kind = ffmpeg::select_h264(&info).unwrap();
+    let kind = pick_encoder(&info);
 
     let video_encoder = StreamEncoder::spawn(
         "video",

@@ -26,7 +26,13 @@ fn main() {
 
     let ffmpeg_path = ffmpeg::locate().expect("FFmpeg is installed");
     let info = ffmpeg::probe(&ffmpeg_path).expect("FFmpeg passes the license check");
-    let video_encoder = ffmpeg::select_h264(&info).expect("an H.264 encoder works");
+    // MEETINGMIND_TEST_H264 (hardware, openh264 or software) forces an encoder; this program is test-only.
+    let video_encoder = match std::env::var("MEETINGMIND_TEST_H264").ok().as_deref() {
+        Some("hardware") => ffmpeg::H264Kind::HardwareMf,
+        Some("openh264") => ffmpeg::H264Kind::OpenH264,
+        Some("software") => ffmpeg::H264Kind::SoftwareMf,
+        _ => ffmpeg::select_h264(&info).expect("an H.264 encoder works"),
+    };
     let database = Arc::new(Database::open(&db_path).expect("database opens"));
 
     let mut sources = SessionSources::default();

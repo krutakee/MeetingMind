@@ -82,12 +82,14 @@ jobs:
         working-directory: src-tauri
         env:
           REQUIRE_FFMPEG: '1'
-        run: cargo test --workspace
+        # Whole recordings run in real time; two at a time keeps a small runner from starving them. --no-fail-fast
+        # runs every test file even if one fails, so one failure cannot hide the others.
+        run: cargo test --workspace --no-fail-fast -- --test-threads=2
 
       - name: Rust tests
         if: runner.os != 'Windows'
         working-directory: src-tauri
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast -- --test-threads=2
 
       - name: Build app and installer
         run: pnpm tauri build

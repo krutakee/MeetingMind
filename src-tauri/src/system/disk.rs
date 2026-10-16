@@ -78,6 +78,7 @@ pub fn best_mount(path: &Path, mounts: &[(PathBuf, u64)]) -> Option<u64> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     fn mounts() -> Vec<(PathBuf, u64)> {
         vec![
             (PathBuf::from(r"C:\"), 100),
