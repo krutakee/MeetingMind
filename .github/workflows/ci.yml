@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            installer: src-tauri/target/release/bundle/nsis/*.exe
+          - name: macOS
+            os: macos-latest
+            installer: src-tauri/target/release/bundle/dmg/*.dmg
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm's version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Frontend tests (Vitest)
+        run: pnpm test
+
+      # The Rust build embeds the built frontend (dist/), so it must exist before any cargo command.
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Rust format check
+        working-directory: src-tauri
+        run: cargo fmt --check
+
+      - name: Rust lint (clippy)
+        working-directory: src-tauri
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test --workspace
+
+      - name: Build app and installer
+        run: pnpm tauri build
+
+      # Unsigned installer, kept for a week so a build can be tried without a local installer toolchain.
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: MeetingMind-${{ matrix.name }}-unsigned
+          path: ${{ matrix.installer }}
+          if-no-files-found: error
+          retention-days: 7

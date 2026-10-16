@@ -1,0 +1,28 @@
+[package]
+name = "meetingmind"
+version = "0.1.0"
+description = "Local meeting recorder with live transcription"
+edition = "2024"
+publish = false
+
+[lib]
+name = "meetingmind_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+tauri = { version = "2.12.4", features = [] }
+tauri-plugin-dialog = "2.8.3"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

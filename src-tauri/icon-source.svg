@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- PLACEHOLDER app icon (not final branding). Regenerate icons with: pnpm tauri icon src-tauri/icon-source.svg -->
+  <rect width="1024" height="1024" rx="224" fill="#1d4ed8"/>
+  <g fill="#ffffff">
+    <rect x="232" y="380" width="72" height="264" rx="36"/>
+    <rect x="352" y="300" width="72" height="424" rx="36"/>
+    <rect x="476" y="236" width="72" height="552" rx="36"/>
+    <rect x="600" y="300" width="72" height="424" rx="36"/>
+    <rect x="720" y="380" width="72" height="264" rx="36"/>
+  </g>
+</svg>

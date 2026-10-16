@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the main window. The folder picker is the only plugin API the UI may call directly.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}
