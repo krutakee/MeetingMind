@@ -5,8 +5,9 @@
 // To move to a newer build: change the PIN, run this script, and re-check the license flags with the app's guard
 // (`cargo test` includes a test that rejects any build configured with --enable-gpl or --enable-nonfree).
 //
-// Note: BtbN keeps dated releases only for a limited time. If the download fails with 404, the pinned release has
-// expired and a copy we control is needed (see docs/phase-2-spikes.md).
+// Where it comes from: our own copy first (a release of this repository, kept because BtbN deletes dated releases
+// after a while), then BtbN's original. Both are the same file; the checksums decide whether it is accepted.
+// The mirror needs the GitHub CLI signed in (`gh auth login`) or GH_TOKEN set (CI does that).
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -23,6 +24,8 @@ const PIN = {
   exeSha256: 'c47e9873edf44d2df1af10c7f509ec9d79626d173ddcda47a2d2a963d22ff70a',
   innerDir: 'ffmpeg-n9.0.2-28-g669f5ab083-win64-lgpl-9.0',
 }
+
+const MIRROR = { repo: 'krutakee/MeetingMind', tag: 'ffmpeg-n9.0.2-btbn-20261016' }
 
 const root = path.resolve(import.meta.dirname, '..')
 const binaries = path.join(root, 'src-tauri', 'binaries')
@@ -45,14 +48,30 @@ if (existsSync(target) && sha256(target) === PIN.exeSha256 && existsSync(license
 
 const work = mkdtempSync(path.join(tmpdir(), 'meetingmind-ffmpeg-'))
 try {
-  const url = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${PIN.tag}/${PIN.asset}`
   const zip = path.join(work, PIN.asset)
-  console.log(`fetch-ffmpeg: downloading ${url}`)
-  const response = await fetch(url, { redirect: 'follow' })
-  if (!response.ok || !response.body) {
-    throw new Error(`download failed: HTTP ${response.status}. The pinned release may have expired.`)
+  let downloaded = false
+  try {
+    console.log(`fetch-ffmpeg: downloading from our mirror (${MIRROR.repo}, ${MIRROR.tag})`)
+    execFileSync(
+      'gh',
+      ['release', 'download', MIRROR.tag, '--repo', MIRROR.repo, '--pattern', PIN.asset, '--dir', work, '--clobber'],
+      { stdio: 'inherit' },
+    )
+    downloaded = existsSync(zip)
+  } catch {
+    console.log('fetch-ffmpeg: the mirror is not available here (is the GitHub CLI signed in?); trying BtbN directly')
   }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(zip))
+  if (!downloaded) {
+    const url = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${PIN.tag}/${PIN.asset}`
+    console.log(`fetch-ffmpeg: downloading ${url}`)
+    const response = await fetch(url, { redirect: 'follow' })
+    if (!response.ok || !response.body) {
+      throw new Error(
+        `download failed: HTTP ${response.status}. BtbN's dated release has probably expired and the mirror could not be reached.`,
+      )
+    }
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(zip))
+  }
 
   const zipHash = sha256(zip)
   if (zipHash !== PIN.zipSha256) {

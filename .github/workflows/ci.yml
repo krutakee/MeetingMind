@@ -52,6 +52,8 @@ jobs:
       # The pinned, checksum-verified LGPL FFmpeg used by the recording tests (Windows only for now).
       - name: Install FFmpeg
         if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: pnpm fetch:ffmpeg
 
       - name: Typecheck
