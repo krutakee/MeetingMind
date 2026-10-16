@@ -38,6 +38,7 @@ use crate::recording::state::{InvalidTransition, RecordingState, StateMachine};
 use crate::recording::timefmt::rfc3339_utc;
 use crate::storage::Database;
 use crate::storage::meetings::{self, NewMeeting};
+use crate::system::PowerManager;
 use crate::system::disk::DiskSpace;
 
 /// Names of the files in a meeting folder.
@@ -144,6 +145,8 @@ pub struct SessionDeps {
     pub video_encoder: H264Kind,
     pub disk: Arc<dyn DiskSpace>,
     pub database: Option<Arc<Database>>,
+    /// Keeps the computer awake while recording. `None` (tests) does nothing.
+    pub power: Option<Arc<dyn PowerManager>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -152,6 +155,8 @@ pub enum WarningKind {
     DiskLow,
     DiskCritical,
     SourceUnavailable,
+    /// The computer could not be kept awake; it may go to sleep during the recording.
+    KeepAwakeFailed,
     SourceLost,
     SourceRestored,
     EncoderFailed,
@@ -305,6 +310,20 @@ fn hand_over(
     })
 }
 
+/// Starts delivery from a prepared source.
+fn start_source(prepared: &mut Prepared, clock: Arc<dyn MonotonicClock>) -> Result<(), String> {
+    match prepared {
+        Prepared::Video(v) => v
+            .source
+            .start(clock, v.tx.clone())
+            .map_err(|e| e.to_string()),
+        Prepared::Audio(a) => a
+            .source
+            .start(clock, a.tx.clone())
+            .map_err(|e| e.to_string()),
+    }
+}
+
 fn f32_le_bytes(samples: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 4);
     for s in samples {
@@ -354,6 +373,9 @@ fn video_worker(
                     }
                 }
                 ScreenEvent::Lost { reason, at } => {
+                    if open_gap.is_some() {
+                        return; // already in a gap (locked and unplugged can overlap): keep its first start
+                    }
                     let (gap_reason, text) = match reason {
                         LossReason::ScreenLocked => (
                             GapReason::ScreenLocked,
@@ -533,15 +555,23 @@ fn audio_worker(
                 else {
                     return; // captured during a pause (or before the start): not part of the recording
                 };
-                let peak = chunk
-                    .samples
-                    .iter()
-                    .fold(0.0f32, |m, s| m.max(s.abs()))
-                    .min(1.0);
+                // After stop was requested the devices keep delivering for a moment until they have been told to
+                // stop. That audio is past the end of the recording and is cut off, so every track ends where the
+                // media timeline ends.
+                let mut samples = chunk.samples;
+                if let Some(end) = *shared.media_end.lock().unwrap() {
+                    if media_start >= end {
+                        return;
+                    }
+                    let frames_left =
+                        ((end - media_start).as_secs_f64() * format.sample_rate as f64) as usize;
+                    samples.truncate(frames_left * format.channels as usize);
+                }
+                let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs())).min(1.0);
                 shared
                     .level_cell(stream)
                     .store(peak.to_bits(), Ordering::Relaxed);
-                let out = timeline.place(media_start, &chunk.samples);
+                let out = timeline.place(media_start, &samples);
                 let leading = first_chunk;
                 if first_chunk {
                     first_chunk = false;
@@ -750,6 +780,8 @@ pub struct Session {
     meeting_id: Option<i64>,
     video_info: Option<VideoInfo>,
     audio_infos: Vec<(StreamKind, String, AudioFormat)>,
+    /// Held while recording so the computer does not sleep; released when the session ends.
+    _awake: Option<Box<dyn Send>>,
     finished: bool,
 }
 
@@ -836,8 +868,24 @@ impl Session {
             meeting_id,
             video_info: None,
             audio_infos: Vec::new(),
+            _awake: None,
             finished: false,
         };
+
+        if let Some(power) = &session.deps.power {
+            // The display stays on while recording the screen: when it turns off, capture stops delivering frames.
+            match power.keep_awake(session.config.mode == Mode::ScreenAudio) {
+                Ok(guard) => session._awake = Some(guard),
+                Err(e) => {
+                    shared.record_error(None, "keepAwakeFailed", &e.to_string());
+                    shared.warn(
+                        WarningKind::KeepAwakeFailed,
+                        None,
+                        "The computer could not be kept awake; it may go to sleep during the recording.",
+                    );
+                }
+            }
+        }
 
         let SessionSources {
             screen,
@@ -867,10 +915,30 @@ impl Session {
 
         // B: the recording clock starts now. C: every source starts, back to back. D: the workers take over.
         *shared.timeline.lock().unwrap() = MediaTimeline::start(session.deps.clock.now());
+        // Starting a source can take a while (the screen capture needs about 0.8 s). They start at the same time, so
+        // the slowest one decides how late the recording's data begins, not the sum of all of them.
+        let clock = session.deps.clock.clone();
+        let started: Vec<(Prepared, Result<(), String>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = prepared
+                .into_iter()
+                .map(|mut p| {
+                    let clock = clock.clone();
+                    scope.spawn(move || {
+                        let result = start_source(&mut p, clock);
+                        (p, result)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().expect("a source's start thread panicked"))
+                .collect()
+        });
         let mut running = Vec::new();
-        for p in prepared {
-            if let Some(p) = session.start_prepared(p) {
-                running.push(p);
+        for (p, result) in started {
+            match result {
+                Ok(()) => running.push(p),
+                Err(message) => session.abandon(p, &message),
             }
         }
         for p in running {
@@ -1007,34 +1075,25 @@ impl Session {
         }))
     }
 
-    /// Starts delivery from a prepared source. On failure the stream's encoder is stopped and its empty file removed.
-    fn start_prepared(&mut self, prepared: Prepared) -> Option<Prepared> {
-        let clock = self.deps.clock.clone();
+    /// Gives up on a source whose start failed: stops its encoder and removes its empty file, and says so.
+    fn abandon(&mut self, prepared: Prepared, message: &str) {
         match prepared {
-            Prepared::Video(mut v) => match v.source.start(clock, v.tx.clone()) {
-                Ok(()) => Some(Prepared::Video(v)),
-                Err(e) => {
-                    v.encoder.abort();
-                    let _ = std::fs::remove_file(&v.output);
-                    self.source_unavailable(
-                        StreamKind::Video,
-                        &format!("The screen could not be captured: {e}"),
-                    );
-                    None
-                }
-            },
-            Prepared::Audio(mut a) => match a.source.start(clock, a.tx.clone()) {
-                Ok(()) => Some(Prepared::Audio(a)),
-                Err(e) => {
-                    a.encoder.abort();
-                    let _ = std::fs::remove_file(&a.output);
-                    self.source_unavailable(
-                        a.stream,
-                        &format!("The audio device could not be opened: {e}"),
-                    );
-                    None
-                }
-            },
+            Prepared::Video(v) => {
+                v.encoder.abort();
+                let _ = std::fs::remove_file(&v.output);
+                self.source_unavailable(
+                    StreamKind::Video,
+                    &format!("The screen could not be captured: {message}"),
+                );
+            }
+            Prepared::Audio(a) => {
+                a.encoder.abort();
+                let _ = std::fs::remove_file(&a.output);
+                self.source_unavailable(
+                    a.stream,
+                    &format!("The audio device could not be opened: {message}"),
+                );
+            }
         }
     }
 

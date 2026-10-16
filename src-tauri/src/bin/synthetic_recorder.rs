@@ -63,6 +63,7 @@ fn main() {
             video_encoder,
             disk: Arc::new(SystemDiskSpace),
             database: Some(database),
+            power: None,
         },
     )
     .expect("recording starts");

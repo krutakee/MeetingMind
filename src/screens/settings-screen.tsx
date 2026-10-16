@@ -29,6 +29,8 @@ function statusText(status: CapabilityStatus, value: string | null): string {
   switch (status) {
     case 'detected':
       return value ? `Detected: ${value}` : 'Detected'
+    case 'unavailable':
+      return 'Not available'
     case 'unknown':
       return 'Unknown'
     case 'notYetImplemented':

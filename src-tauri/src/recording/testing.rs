@@ -123,7 +123,7 @@ impl ScreenSource for SyntheticScreen {
                     } else {
                         ScreenEvent::Restored { at }
                     };
-                    let _ = events.try_send(event);
+                    crate::capture::send_event(&events, event);
                     next_change = Instant::now(); // a new frame right after unlocking, like a real redraw
                 }
                 if !is_locked && Instant::now() >= next_change {
@@ -272,10 +272,13 @@ impl AudioSource for SyntheticAudio {
                 if unplugged.load(Ordering::SeqCst) {
                     if !lost {
                         lost = true;
-                        let _ = events.try_send(AudioEvent::DeviceLost {
-                            reason: "synthetic device unplugged".into(),
-                            at: clock.now(),
-                        });
+                        crate::audio::send_event(
+                            &events,
+                            AudioEvent::DeviceLost {
+                                reason: "synthetic device unplugged".into(),
+                                at: clock.now(),
+                            },
+                        );
                     }
                     std::thread::sleep(Duration::from_millis(10));
                     continue;
@@ -284,9 +287,12 @@ impl AudioSource for SyntheticAudio {
                     lost = false;
                     session_start_wall = Instant::now();
                     session_start_clock = clock.now();
-                    let _ = events.try_send(AudioEvent::DeviceRestored {
-                        at: session_start_clock,
-                    });
+                    crate::audio::send_event(
+                        &events,
+                        AudioEvent::DeviceRestored {
+                            at: session_start_clock,
+                        },
+                    );
                     index = 0;
                 }
                 let due = session_start_wall + Duration::from_secs_f64(index as f64 * chunk_secs);

@@ -35,7 +35,7 @@ export type CapabilityId =
   | 'gpu_backend'
   | 'video_encoders'
 
-export type CapabilityStatus = 'detected' | 'unknown' | 'notYetImplemented'
+export type CapabilityStatus = 'detected' | 'unavailable' | 'unknown' | 'notYetImplemented'
 
 export interface Capability {
   id: CapabilityId

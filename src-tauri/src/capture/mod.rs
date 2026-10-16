@@ -7,6 +7,24 @@ use std::time::Duration;
 
 use crate::recording::clock::MonotonicClock;
 
+#[cfg(windows)]
+pub mod windows;
+
+/// Sends a control event (screen locked, monitor lost, restored), waiting a moment for room. These events are rare
+/// and must not be dropped the way a surplus frame may be.
+pub fn send_event(events: &SyncSender<ScreenEvent>, event: ScreenEvent) {
+    let mut event = event;
+    for _ in 0..400 {
+        match events.try_send(event) {
+            Ok(()) | Err(std::sync::mpsc::TrySendError::Disconnected(_)) => return,
+            Err(std::sync::mpsc::TrySendError::Full(back)) => {
+                event = back;
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MonitorInfo {
     /// Stable identifier (the device name on Windows, for example `\\.\DISPLAY2`). Never an index.

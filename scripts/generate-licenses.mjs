@@ -19,6 +19,10 @@ const PURPOSE = {
   'tauri-build': 'Build step for Tauri',
   'tauri-plugin-dialog': 'Native folder picker',
   rusqlite: 'SQLite access; bundles SQLite with FTS5',
+  cpal: 'Microphone and system-audio capture (Windows)',
+  'windows-capture': 'Screen capture with Windows.Graphics.Capture (Windows)',
+  windows: 'Windows API calls: power requests, hiding windows from capture, lock events, local time',
+  libc: 'Local time on macOS',
   serde: 'Data (de)serialization',
   serde_json: 'JSON for settings and the UI bridge',
   sysinfo: 'RAM and CPU detection',
@@ -135,7 +139,7 @@ const table = (header, rows) =>
 
 // ---------- Rust ----------
 const rustPackages = new Map() // "name version" -> { name, version, license }
-let direct = null
+const directByName = new Map() // a dependency used on only one platform still belongs in the table
 for (const target of RUST_TARGETS) {
   const metadata = JSON.parse(
     run(`cargo metadata --format-version 1 --locked --filter-platform ${target}`, path.join(root, 'src-tauri')),
@@ -150,24 +154,23 @@ for (const target of RUST_TARGETS) {
     const license = pkg.license ?? (pkg.license_file ? `(see ${pkg.license_file})` : 'MISSING')
     rustPackages.set(`${pkg.name} ${pkg.version}`, { name: pkg.name, version: pkg.version, license })
   }
-  if (!direct) {
-    const rootNode = metadata.resolve.nodes.find((node) => node.id === rootId)
-    const rootPackage = byId.get(rootId)
-    // The package lists itself as a dev-dependency (to switch on its test-only feature); that is not a third party.
-    direct = rootPackage.dependencies.filter((dependency) => dependency.name !== rootPackage.name).map((dependency) => {
-      const kind = dependency.kind ?? 'normal'
-      const resolved = rootNode.deps.find((dep) => byId.get(dep.pkg)?.name === dependency.name)
-      const pkg = byId.get(resolved.pkg)
-      return {
-        name: pkg.name,
-        version: pkg.version,
-        kind: kind === 'normal' ? 'runtime' : kind,
-        license: pkg.license ?? 'MISSING',
-      }
+  const rootNode = metadata.resolve.nodes.find((node) => node.id === rootId)
+  const rootPackage = byId.get(rootId)
+  // The package lists itself as a dev-dependency (to switch on its test-only feature); that is not a third party.
+  for (const dependency of rootPackage.dependencies.filter((d) => d.name !== rootPackage.name)) {
+    const resolved = rootNode.deps.find((dep) => byId.get(dep.pkg)?.name === dependency.name)
+    if (!resolved) continue // not used on this platform
+    const pkg = byId.get(resolved.pkg)
+    const kind = dependency.kind ?? 'normal'
+    directByName.set(`${pkg.name}:${kind}`, {
+      name: pkg.name,
+      version: pkg.version,
+      kind: kind === 'normal' ? 'runtime' : kind,
+      license: pkg.license ?? 'MISSING',
     })
   }
 }
-const rustDirect = direct.sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
+const rustDirect = [...directByName.values()].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
 
 // ---------- JavaScript ----------
 const packageJson = JSON.parse(run('node -p "JSON.stringify(require(\'./package.json\'))"', root))

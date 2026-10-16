@@ -1,8 +1,12 @@
-//! System integration: the one place (with `capture` and `audio`, which arrive in Phase 2) where OS-specific
-//! code is allowed. Everything outside these modules talks to the OS only through the traits defined here.
+//! System integration: with `capture` and `audio`, the only place where OS-specific code is allowed. Everything
+//! else talks to the OS only through the types and traits defined here.
 //!
-//! Capability detection reports what this machine can really do (SPEC Section 5). Phase 1 can detect RAM and CPU
-//! cores. Everything else is reported as `NotYetImplemented` -- a capability is never guessed or faked.
+//! What lives here: capability detection, free disk space, child-process helpers, the local clock, keeping the
+//! machine awake while recording, hiding MeetingMind's own windows from screen capture, and watching for the
+//! workstation being locked.
+//!
+//! Capability detection reports what this machine can really do (SPEC Section 5). A check that is not
+//! implemented for a platform is reported as `NotYetImplemented` -- a capability is never guessed or faked.
 
 pub mod disk;
 mod hardware;
@@ -12,6 +16,11 @@ pub mod process;
 mod macos;
 #[cfg(windows)]
 mod windows;
+
+#[cfg(target_os = "macos")]
+use self::macos as platform;
+#[cfg(windows)]
+use self::windows as platform;
 
 #[cfg(not(any(windows, target_os = "macos")))]
 compile_error!("MeetingMind supports Windows and macOS only (SPEC Section 3).");
@@ -36,8 +45,8 @@ pub enum CapabilityId {
 pub enum CapabilityStatus {
     /// Checked on this machine and found.
     Detected,
-    // An `Unavailable` status ("checked and not there; `detail` says why") is added in Phase 2, with the first
-    // check that can report it. Until then no code path could produce it.
+    /// Checked on this machine and not available. `detail` says why and what to do instead.
+    Unavailable,
     /// The check ran but gave no usable answer.
     Unknown,
     /// This build does not check for it yet.
@@ -61,10 +70,96 @@ pub struct CapabilityReport {
     pub capabilities: Vec<Capability>,
 }
 
-/// Implemented once per supported OS. Phase 2 adds the real checks (system-audio loopback, capture exclusion,
-/// encoders) inside the platform implementations.
+/// Implemented once per supported OS. The platform implementations replace the generic placeholders with real
+/// checks (system-audio loopback and capture exclusion on Windows). Video encoders are detected by the recording code,
+/// which is the only part that knows about FFmpeg; the command layer merges that in.
 pub trait CapabilityProbe: Send + Sync {
     fn probe(&self) -> CapabilityReport;
+}
+
+/// Replaces the capability with the same id (used by platform probes to fill in what they can really detect).
+pub(crate) fn replace_capability(report: &mut CapabilityReport, capability: Capability) {
+    match report
+        .capabilities
+        .iter_mut()
+        .find(|c| c.id == capability.id)
+    {
+        Some(slot) => *slot = capability,
+        None => report.capabilities.push(capability),
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SystemError {
+    #[error("{0}")]
+    Os(String),
+    #[error("not supported on this operating system yet: {0}")]
+    NotSupported(&'static str),
+}
+
+/// Local date and time, for naming meeting folders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalDateTime {
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
+    pub hour: u8,
+    pub minute: u8,
+}
+
+/// Makes the operating system's component runtime (COM / WinRT on Windows) stay usable for the whole run of the
+/// program. Call it before the first use of a device or capture API; it does its work once.
+///
+/// Why: the Windows capture and audio libraries cache WinRT activation factories in statics. Those objects live in
+/// the process's multithreaded apartment, and that apartment is destroyed when the last thread using it ends. After
+/// one recording's threads had finished, starting the next recording called a cached object from the dead apartment
+/// and crashed with an access violation (found with the hardware smoke tests). Holding the apartment open prevents it.
+pub fn keep_component_runtime_alive() {
+    platform::keep_component_runtime_alive();
+}
+
+/// The current local time, from the operating system.
+pub fn local_now() -> LocalDateTime {
+    platform::local_now()
+}
+
+/// Keeps the computer awake while recording (SPEC Section 5).
+pub trait PowerManager: Send + Sync {
+    /// Stops the system from going to sleep (and, if `keep_display_on`, the display from turning off) until the
+    /// returned guard is dropped. It cannot stop a sleep the user starts, such as closing the lid.
+    fn keep_awake(&self, keep_display_on: bool) -> Result<Box<dyn Send>, SystemError>;
+}
+
+pub fn platform_power() -> Box<dyn PowerManager> {
+    platform::power_manager()
+}
+
+/// Hides (or shows again) a window in screen recordings and screenshots. `window` is the native window handle
+/// (an `HWND` on Windows). MeetingMind's own windows are hidden only while recording.
+pub fn set_window_excluded_from_capture(
+    window: *mut std::ffi::c_void,
+    excluded: bool,
+) -> Result<(), SystemError> {
+    platform::set_window_excluded_from_capture(window, excluded)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionEvent {
+    /// The workstation was locked: screen capture delivers nothing until it is unlocked.
+    Locked,
+    Unlocked,
+}
+
+/// Keeps delivering session events to a callback until dropped.
+pub struct SessionWatcher {
+    _guard: Box<dyn Send>,
+}
+
+/// Watches for the workstation being locked and unlocked. The callback runs on a background thread.
+pub fn watch_session(
+    on_event: impl Fn(SessionEvent) + Send + 'static,
+) -> Result<SessionWatcher, SystemError> {
+    platform::watch_session(Box::new(on_event)).map(|guard| SessionWatcher { _guard: guard })
 }
 
 pub fn platform_probe() -> Box<dyn CapabilityProbe> {
@@ -83,11 +178,11 @@ fn report_from_hardware(platform: &'static str, hardware: &Hardware) -> Capabili
             cpu_capability(hardware),
             not_yet_implemented(
                 CapabilityId::SystemAudioCapture,
-                "Whether system audio can be captured is not checked yet (planned for Phase 2).",
+                "Whether system audio can be captured is not checked on this platform yet.",
             ),
             not_yet_implemented(
                 CapabilityId::CaptureExclusion,
-                "Whether MeetingMind's own windows can be hidden from recordings is not checked yet (planned for Phase 2).",
+                "Whether MeetingMind's own windows can be hidden from recordings is not checked on this platform yet.",
             ),
             not_yet_implemented(
                 CapabilityId::GpuBackend,
@@ -95,7 +190,7 @@ fn report_from_hardware(platform: &'static str, hardware: &Hardware) -> Capabili
             ),
             not_yet_implemented(
                 CapabilityId::VideoEncoders,
-                "Available video encoders are not detected yet (planned for Phase 2).",
+                "Available video encoders are detected by the recording code, not by the platform probe.",
             ),
         ],
     }

@@ -20,6 +20,7 @@ use meetingmind_lib::recording::testing::{SyntheticAudio, SyntheticScreen};
 use meetingmind_lib::storage::Database;
 use meetingmind_lib::storage::meetings;
 use meetingmind_lib::system::disk::DiskSpace;
+use meetingmind_lib::system::{PowerManager, SystemError};
 
 fn ffmpeg_or_skip(test: &str) -> Option<(FfmpegInfo, H264Kind)> {
     match ffmpeg::locate().and_then(|p| ffmpeg::probe(&p)) {
@@ -82,6 +83,7 @@ fn rig(info: FfmpegInfo, kind: H264Kind) -> Rig {
         video_encoder: kind,
         disk: disk.clone(),
         database: Some(db.clone()),
+        power: None,
     };
     Rig {
         storage,
@@ -594,6 +596,7 @@ fn a_second_recording_with_the_same_title_never_touches_the_first() {
         video_encoder: kind,
         disk: rig_a.disk.clone(),
         database: Some(rig_a.db.clone()),
+        power: None,
     };
     let mut second_sources = SessionSources::default();
     second_sources =
@@ -610,5 +613,143 @@ fn a_second_recording_with_the_same_title_never_touches_the_first() {
         std::fs::read(&first_outcome.file).unwrap(),
         first_bytes,
         "the first recording is untouched"
+    );
+}
+
+/// TEST DOUBLE: counts how many keep-awake guards are alive, and what each asked for.
+struct FakePower {
+    alive: Arc<std::sync::atomic::AtomicUsize>,
+    display_requests: Arc<std::sync::Mutex<Vec<bool>>>,
+    refuse: bool,
+}
+
+struct FakeGuard(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for FakeGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl PowerManager for FakePower {
+    fn keep_awake(&self, keep_display_on: bool) -> Result<Box<dyn Send>, SystemError> {
+        self.display_requests.lock().unwrap().push(keep_display_on);
+        if self.refuse {
+            return Err(SystemError::Os("the power request was refused".into()));
+        }
+        self.alive.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(Box::new(FakeGuard(self.alive.clone())))
+    }
+}
+
+fn fake_power(
+    refuse: bool,
+) -> (
+    Arc<FakePower>,
+    Arc<std::sync::atomic::AtomicUsize>,
+    Arc<std::sync::Mutex<Vec<bool>>>,
+) {
+    let alive = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    (
+        Arc::new(FakePower {
+            alive: alive.clone(),
+            display_requests: requests.clone(),
+            refuse,
+        }),
+        alive,
+        requests,
+    )
+}
+
+#[test]
+fn the_computer_is_kept_awake_while_recording_and_released_afterwards() {
+    let Some((info, kind)) = ffmpeg_or_skip("keep awake") else {
+        return;
+    };
+    let mut rig = rig(info, kind);
+    let (power, alive, requests) = fake_power(false);
+    rig.deps.power = Some(power);
+    let sources = SessionSources::default()
+        .with_screen(SyntheticScreen::new(320, 180))
+        .with_microphone(SyntheticAudio::new("Synthetic microphone", 48_000, 1));
+
+    let session =
+        Session::start(config(&rig, "Awake", Mode::ScreenAudio), sources, rig.deps).unwrap();
+    assert_eq!(
+        alive.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "kept awake during the recording"
+    );
+    std::thread::sleep(Duration::from_millis(1200));
+    session.stop().unwrap();
+
+    assert_eq!(
+        alive.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "released when the recording ends"
+    );
+    assert_eq!(
+        *requests.lock().unwrap(),
+        vec![true],
+        "recording the screen also keeps the display on"
+    );
+}
+
+#[test]
+fn audio_only_recording_lets_the_display_turn_off() {
+    let Some((info, kind)) = ffmpeg_or_skip("keep awake audio only") else {
+        return;
+    };
+    let mut rig = rig(info, kind);
+    let (power, _alive, requests) = fake_power(false);
+    rig.deps.power = Some(power);
+    let sources = SessionSources::default().with_microphone(SyntheticAudio::new(
+        "Synthetic microphone",
+        48_000,
+        1,
+    ));
+
+    let session = Session::start(config(&rig, "Call", Mode::AudioOnly), sources, rig.deps).unwrap();
+    std::thread::sleep(Duration::from_millis(800));
+    session.stop().unwrap();
+
+    assert_eq!(*requests.lock().unwrap(), vec![false]);
+}
+
+#[test]
+fn a_refused_power_request_is_a_warning_and_the_recording_still_works() {
+    let Some((info, kind)) = ffmpeg_or_skip("keep awake refused") else {
+        return;
+    };
+    let mut rig = rig(info, kind);
+    let (power, _alive, _requests) = fake_power(true);
+    rig.deps.power = Some(power);
+    let sources = SessionSources::default().with_microphone(SyntheticAudio::new(
+        "Synthetic microphone",
+        48_000,
+        1,
+    ));
+
+    let session =
+        Session::start(config(&rig, "No power", Mode::AudioOnly), sources, rig.deps).unwrap();
+    let folder = session.folder().to_path_buf();
+    assert!(
+        session
+            .snapshot()
+            .warnings
+            .iter()
+            .any(|w| w.kind == WarningKind::KeepAwakeFailed)
+    );
+    std::thread::sleep(Duration::from_millis(1000));
+    let outcome = session.stop().unwrap();
+
+    assert!(outcome.file.is_file());
+    assert!(
+        MeetingMetadata::read(&folder)
+            .unwrap()
+            .errors
+            .iter()
+            .any(|e| e.kind == "keepAwakeFailed")
     );
 }

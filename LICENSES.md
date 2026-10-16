@@ -8,7 +8,7 @@ Windows and macOS; JavaScript: `pnpm licenses`). Licenses written as "A OR B" le
 below counts a package as permissive when at least one permitted choice is. License texts were not read and this is
 not legal advice. Get a legal review before distributing MeetingMind commercially.
 
-**Summary.** 298 Rust crates and 274 JavaScript packages are in the dependency trees.
+**Summary.** 306 Rust crates and 274 JavaScript packages are in the dependency trees.
 5 Rust crate(s) and 5 JavaScript package(s) need review (listed below); all others declare permissive licenses.
 
 ## Direct dependencies
@@ -19,6 +19,8 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 | --- | --- | --- | --- | --- |
 | tauri-build | 2.7.3 | build | Apache-2.0 OR MIT | Build step for Tauri |
 | tempfile | 3.27.0 | dev | MIT OR Apache-2.0 | Temporary folders in tests |
+| cpal | 0.18.2 | runtime | Apache-2.0 | Microphone and system-audio capture (Windows) |
+| libc | 0.2.190 | runtime | MIT OR Apache-2.0 | Local time on macOS |
 | rusqlite | 0.40.2 | runtime | MIT | SQLite access; bundles SQLite with FTS5 |
 | serde | 1.0.229 | runtime | MIT OR Apache-2.0 | Data (de)serialization |
 | serde_json | 1.0.154 | runtime | MIT OR Apache-2.0 | JSON for settings and the UI bridge |
@@ -29,6 +31,8 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 | tracing | 0.1.44 | runtime | MIT | Structured logging API |
 | tracing-appender | 0.2.5 | runtime | MIT | Rotating log files |
 | tracing-subscriber | 0.3.23 | runtime | MIT | Log formatting and filtering |
+| windows | 0.62.2 | runtime | MIT OR Apache-2.0 | Windows API calls: power requests, hiding windows from capture, lock events, local time |
+| windows-capture | 2.0.1 | runtime | MIT | Screen capture with Windows.Graphics.Capture (Windows) |
 
 ### JavaScript (`package.json`)
 
@@ -70,18 +74,19 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 
 ## Whole dependency trees
 
-### Rust: licenses declared by all 298 crates (Windows + macOS)
+### Rust: licenses declared by all 306 crates (Windows + macOS)
 
 | Declared license | Crates |
 | --- | --- |
-| MIT OR Apache-2.0 | 138 |
-| MIT | 59 |
+| MIT OR Apache-2.0 | 144 |
+| MIT | 60 |
 | Apache-2.0 OR MIT | 28 |
 | Unicode-3.0 | 18 |
 | MIT/Apache-2.0 | 13 |
 | Zlib OR Apache-2.0 OR MIT | 10 |
 | Unlicense OR MIT | 8 |
 | MPL-2.0 | 5 |
+| Apache-2.0 | 2 |
 | BSD-3-Clause | 2 |
 | MIT OR Apache-2.0 OR Zlib | 2 |
 | MIT OR Zlib OR Apache-2.0 | 2 |
@@ -89,7 +94,6 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 | Zlib | 2 |
 | (MIT OR Apache-2.0) AND Unicode-3.0 | 1 |
 | 0BSD OR MIT OR Apache-2.0 | 1 |
-| Apache-2.0 | 1 |
 | Apache-2.0 / MIT | 1 |
 | Apache-2.0 AND MIT | 1 |
 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 1 |

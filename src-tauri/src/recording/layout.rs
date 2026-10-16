@@ -7,16 +7,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Local date and time of the recording start. Supplied by the caller (the OS clock lives in `system`), which also
-/// keeps this module testable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LocalDateTime {
-    pub year: i32,
-    pub month: u8,
-    pub day: u8,
-    pub hour: u8,
-    pub minute: u8,
-}
+pub use crate::system::LocalDateTime;
 
 const MAX_TITLE_CHARS: usize = 60;
 /// Windows' classic path limit is 260. The folder holds files such as `system-audio.flac` and temporary tracks, so
