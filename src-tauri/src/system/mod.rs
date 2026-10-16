@@ -4,7 +4,9 @@
 //! Capability detection reports what this machine can really do (SPEC Section 5). Phase 1 can detect RAM and CPU
 //! cores. Everything else is reported as `NotYetImplemented` -- a capability is never guessed or faked.
 
+pub mod disk;
 mod hardware;
+pub mod process;
 
 #[cfg(target_os = "macos")]
 mod macos;

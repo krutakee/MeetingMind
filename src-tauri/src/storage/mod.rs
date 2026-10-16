@@ -1,5 +1,6 @@
 //! SQLite storage. OS-agnostic: nothing in here may use platform APIs.
 
+pub mod meetings;
 pub mod migrations;
 pub mod settings;
 
@@ -44,7 +45,8 @@ impl Database {
         })
     }
 
-    fn with_conn<T>(
+    /// Runs `f` with exclusive use of the connection.
+    pub fn with_conn<T>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, AppError>,
     ) -> Result<T, AppError> {

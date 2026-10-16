@@ -153,7 +153,8 @@ for (const target of RUST_TARGETS) {
   if (!direct) {
     const rootNode = metadata.resolve.nodes.find((node) => node.id === rootId)
     const rootPackage = byId.get(rootId)
-    direct = rootPackage.dependencies.map((dependency) => {
+    // The package lists itself as a dev-dependency (to switch on its test-only feature); that is not a third party.
+    direct = rootPackage.dependencies.filter((dependency) => dependency.name !== rootPackage.name).map((dependency) => {
       const kind = dependency.kind ?? 'normal'
       const resolved = rootNode.deps.find((dep) => byId.get(dep.pkg)?.name === dependency.name)
       const pkg = byId.get(resolved.pkg)

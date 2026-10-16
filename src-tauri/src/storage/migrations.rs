@@ -16,11 +16,18 @@ pub struct Migration {
 }
 
 /// All migrations, in order. Versions must be 1, 2, 3, ... with no gaps.
-pub static MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_schema",
-    sql: include_str!("../../migrations/0001_initial_schema.sql"),
-}];
+pub static MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_schema",
+        sql: include_str!("../../migrations/0001_initial_schema.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "recording_presets",
+        sql: include_str!("../../migrations/0002_recording_presets.sql"),
+    },
+];
 
 #[cfg(test)]
 pub fn latest_version() -> u32 {
@@ -255,6 +262,7 @@ mod tests {
             "jobs",
             "models",
             "settings",
+            "recording_presets",
             "segments_fts",
             "schema_migrations",
         ] {
@@ -447,6 +455,37 @@ mod tests {
             [],
         );
         assert!(duplicate_folder.is_err(), "two meetings share one folder");
+    }
+
+    #[test]
+    fn preset_names_are_unique_ignoring_case_and_settings_must_be_json() {
+        let mut conn = connection();
+        migrate(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO recording_presets (name, settings) VALUES ('Standup', '{\"fps\":15}')",
+            [],
+        )
+        .unwrap();
+
+        let same_name_other_case = conn.execute(
+            "INSERT INTO recording_presets (name, settings) VALUES ('STANDUP', '{}')",
+            [],
+        );
+        let not_json = conn.execute(
+            "INSERT INTO recording_presets (name, settings) VALUES ('Other', 'not json')",
+            [],
+        );
+        let blank_name = conn.execute(
+            "INSERT INTO recording_presets (name, settings) VALUES ('   ', '{}')",
+            [],
+        );
+
+        assert!(
+            same_name_other_case.is_err(),
+            "names must be unique ignoring case"
+        );
+        assert!(not_json.is_err(), "settings must be valid JSON");
+        assert!(blank_name.is_err(), "a blank name is not a name");
     }
 
     // --- runner behaviour, with small throwaway migration lists ---

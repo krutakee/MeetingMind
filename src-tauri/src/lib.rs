@@ -6,11 +6,14 @@
 //! - `storage` (and, from Phase 3-4, `transcription` and `library`): identical on Windows and macOS.
 //! - `commands`: the thin layer the UI calls. `logging` and `error` are shared plumbing.
 
+pub mod audio;
+pub mod capture;
 mod commands;
 pub mod error;
 pub mod logging;
-mod storage;
-mod system;
+pub mod recording;
+pub mod storage;
+pub mod system;
 
 use tauri::Manager;
 use tracing::{error, info, warn};

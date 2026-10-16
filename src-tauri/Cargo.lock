@@ -1815,6 +1815,7 @@ dependencies = [
 name = "meetingmind"
 version = "0.1.0"
 dependencies = [
+ "meetingmind",
  "rusqlite",
  "serde",
  "serde_json",

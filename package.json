@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "licenses:generate": "node scripts/generate-licenses.mjs"
+    "licenses:generate": "node scripts/generate-licenses.mjs",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.17",

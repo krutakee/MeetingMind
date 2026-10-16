@@ -49,6 +49,11 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      # The pinned, checksum-verified LGPL FFmpeg used by the recording tests (Windows only for now).
+      - name: Install FFmpeg
+        if: runner.os == 'Windows'
+        run: pnpm fetch:ffmpeg
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -70,7 +75,17 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # Windows runs the tests that need the real FFmpeg and refuses to skip them (REQUIRE_FFMPEG): a skipped test
+      # must never be mistaken for a passing one. macOS has no FFmpeg yet (Phase 5), so those tests skip there.
+      - name: Rust tests (FFmpeg required)
+        if: runner.os == 'Windows'
+        working-directory: src-tauri
+        env:
+          REQUIRE_FFMPEG: '1'
+        run: cargo test --workspace
+
       - name: Rust tests
+        if: runner.os != 'Windows'
         working-directory: src-tauri
         run: cargo test --workspace
 

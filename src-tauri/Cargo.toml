@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Local meeting recorder with live transcription"
 edition = "2024"
 publish = false
+# `cargo run` and `tauri dev` start the app, not the test program below.
+default-run = "meetingmind"
 
 [lib]
 name = "meetingmind_lib"
@@ -12,11 +14,21 @@ crate-type = ["rlib"]
 [build-dependencies]
 tauri-build = { version = "2.7.3", features = [] }
 
+# A recorder built from synthetic sources, used by the crash-recovery test. Exists only with test-doubles.
+[[bin]]
+name = "synthetic-recorder"
+path = "src/bin/synthetic_recorder.rs"
+required-features = ["test-doubles"]
+
+[features]
+# Synthetic screen and audio sources for tests and the crash-recovery test program. Never enabled in the app.
+test-doubles = []
+
 [dependencies]
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
+sysinfo = { version = "0.39.6", default-features = false, features = ["disk", "system"] }
 tauri = { version = "2.12.4", features = [] }
 tauri-plugin-dialog = "2.8.3"
 thiserror = "2.0.21"
@@ -25,4 +37,6 @@ tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
 [dev-dependencies]
+# Turns the test-doubles feature on for tests and examples without turning it on for the app.
+meetingmind = { path = ".", features = ["test-doubles"] }
 tempfile = "3.27.0"

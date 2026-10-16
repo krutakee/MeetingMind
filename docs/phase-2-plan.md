@@ -203,13 +203,38 @@ Each step ends with passing tests and a commit. I stop and report if a step brea
 | Step | Contents | Gate |
 |---|---|---|
 | M0 Spikes (**done 2026-10-16**) | FFmpeg download, license and encoder check; a few seconds of real capture; mic and loopback timestamps and device formats; a 10-minute drift measurement. Findings in `docs/phase-2-spikes.md`. | No assumption failed. One refinement: encoder order (see Section 3). |
-| M1 Core | Everything that needs no hardware: clock, state machine, pacer, drift correction, folder layout, `meeting.json`, migration 0002, disk guard, FFmpeg manager, synthetic sources, end-to-end and recovery tests. | Tests green locally and in CI. |
+| M1 Core (**done 2026-10-16**) | Everything that needs no hardware: clock, state machine, pacer, drift correction, folder layout, `meeting.json`, migration 0002, disk guard, FFmpeg manager, synthetic sources, end-to-end and recovery tests. | Tests green locally (174 Rust tests, FFmpeg required) and in CI. |
 | M2 Windows sources | Real capture and audio, sleep guard, window exclusion, session events, disk space, capability probe updates. | Smoke recordings on this machine. |
 | M3 UI | Record screen, control window, tray, hotkeys, consent, banners, recovery prompt, playback. | Vitest plus a manual pass. |
 | M4 Acceptance | The four criteria above, docs, `LICENSES.md`, CI changes (fetch and cache the sidecar, run FFmpeg tests on the Windows runner). | Phase report. |
 
-CI note: the Windows runner needs the pinned FFmpeg downloaded and cached. The macOS runner skips FFmpeg-dependent
-tests and only has to compile.
+CI note: the Windows runner downloads the pinned FFmpeg (`pnpm fetch:ffmpeg`, checksum-verified) and runs the tests with
+`REQUIRE_FFMPEG=1`, so a missing FFmpeg fails the build instead of skipping tests. The macOS runner has no FFmpeg yet;
+those tests skip there and it only has to compile.
+
+### What M1 settled (design changes made while building it)
+
+- **Two-phase sources.** A source has `prepare()` (slow: open the device) and `start()` (fast: begin delivering). The
+  session prepares every source and launches every encoder first, then starts the recording clock, then starts the
+  sources back to back. Before this, launching FFmpeg for the second and third stream was counted as 340 ms of lost
+  audio at the start.
+- **Events carry the source's own timestamp.** "Screen locked" and "device unplugged" are placed on the timeline at
+  the time the source saw them, and the pacer applies gaps in time order, so a busy worker cannot move a gap.
+- **One outage is one `meeting.json` entry.** Gap pieces that touch are merged.
+- **Start-up delay is `startOffsetMs`, not a gap**, unless it is a second or more.
+- **A slow encoder is not a dead one.** Workers wait up to 30 s for a running encoder to accept data (10 s while
+  stopping) before declaring it failed. Found when five hardware-encoder sessions started at once: the hardware encoder
+  can take seconds to start, and a 5 s limit made the video disappear.
+- **Recovery keeps the FLAC tracks at full length.** Only `recording.mp4` is cut at the shortest common end; real
+  recorded audio is never discarded, so after a recovery the FLAC files can be a second or two longer.
+- **Deleting a folder retries for up to 5 s**, because Windows keeps files locked briefly after a process dies and while
+  antivirus scans a new file.
+- **Test doubles are never in the app.** `recording::testing` and the `synthetic-recorder` test program exist only with
+  the `test-doubles` feature, which a self dev-dependency turns on for `cargo test`.
+
+Measured or simulated in M1: two simulated hours with a device clock 20 ppm fast or slow stay within 20 ms of media
+time (simulation, not real hardware). A process killed hard mid-recording (with its FFmpeg children) is recovered into
+one playable file in 5 of 5 repeated runs.
 
 ## 9. Risks
 

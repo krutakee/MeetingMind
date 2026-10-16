@@ -29,7 +29,10 @@ The frontend `dist/` folder (repo root) must exist before any cargo command: run
 - Build installer: `pnpm tauri build` (release exe compiles locally; the NSIS bundling step is blocked here)
 - Frontend tests: `pnpm test` (Vitest)
 - Frontend typecheck/lint: `pnpm typecheck`, `pnpm lint`
-- Rust tests: `cargo test --workspace` (run from `src-tauri/`)
+- Install the pinned FFmpeg sidecar for the recording tests: `pnpm fetch:ffmpeg` (checksum-verified, Windows only for now)
+- Rust tests: `cargo test --workspace` (run from `src-tauri/`). The real-FFmpeg tests skip if FFmpeg is missing; set
+  `REQUIRE_FFMPEG=1` to make that a failure (CI does, on Windows). Test doubles live behind the `test-doubles` feature,
+  which `cargo test` turns on by itself; the app never contains them.
 - Rust lint/format: `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check` (from `src-tauri/`)
 - Regenerate `LICENSES.md` after any dependency change: `pnpm licenses:generate`
 
