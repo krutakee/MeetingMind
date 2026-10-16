@@ -50,10 +50,10 @@ later phases are expanded when they start. Phase 1 is done (2026-10-16). Phase 2
 - [x] Update CLAUDE.md "Commands" with the commands actually verified.
 - [x] Run all tests, commit, write the phase report (what works / doesn't / blocked / machine used), stop.
 
-## Phase 2 — Windows recording (plan approved 2026-10-16; M0 in progress)
+## Phase 2 — Windows recording (plan approved 2026-10-16; M0 done, M1 next)
 Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.md). Milestones end with passing tests and a commit.
 
-- [ ] **M0 Spikes:** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);
+- [x] **M0 Spikes (done 2026-10-16, results in docs/phase-2-spikes.md):** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);
       real WGC frames; cpal mic + loopback timestamps/formats; 10-minute drift measurement; findings in `docs/`.
 - [ ] **M1 Core (no hardware):** clock + pause accounting, state machine, video pacer, drift correction, folder layout +
       title sanitization, `meeting.json` v1 + docs, migration 0002 (presets), disk guard, FFmpeg process manager + GPL-build

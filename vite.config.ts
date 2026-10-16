@@ -1,7 +1,7 @@
 import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 // Set by `tauri dev` when running on a phone/remote host; unused for the desktop app.
 const host = process.env.TAURI_DEV_HOST
@@ -24,5 +24,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     restoreMocks: true,
+    // Rust folders (including the spikes' build output and downloads) hold no frontend tests.
+    exclude: [...configDefaults.exclude, 'spikes/**', 'src-tauri/**'],
   },
 })

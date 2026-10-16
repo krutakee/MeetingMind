@@ -1,6 +1,7 @@
 # Phase 2 plan — Windows recording
 
-**Status: approved 2026-10-16. Work starts with M0 (spikes). Hotkeys changed in review: see Section 10.**
+**Status: approved 2026-10-16. M0 (spikes) is done; its results are in [phase-2-spikes.md](phase-2-spikes.md) and are
+applied below. Next: M1. Hotkeys changed in review: see Section 10.**
 Scope and acceptance criteria come from SPEC.md Sections 5 and 11 and do not change here. This document says how
 they will be met, what was checked, what is still unverified, and what needs a decision.
 
@@ -22,7 +23,7 @@ second consumer of the same audio without touching the recording code, but no co
 | Screen capture | `windows-capture` 2.0.1, MIT, updated 2026-08 (Windows.Graphics.Capture). | Verified exists and is maintained; behaviour unverified until spike |
 | Live FLAC writing | `flacenc` 0.5.1 only documents encoding a whole buffer, not incremental streaming. Not suitable for a live, crash-safe track. FFmpeg's `flac` encoder will write the tracks instead. | Verified (README) |
 | FFmpeg LGPL build | BtbN publishes `win64-lgpl` and `win64-lgpl-shared` builds (releases n8.1, n9.0, master). The static LGPL zip is 164-170 MB. A custom minimal build would be much smaller. | Verified exists; contents unverified |
-| Encoders in that build | Whether it has `h264_mf` (Media Foundation), `libopenh264`, `aac`, `flac`, and a build config with no `--enable-gpl` / `--enable-nonfree`. | **Not verified. First spike task.** |
+| Encoders in that build | `h264_mf`, `libopenh264`, `aac`, `flac` are present; the build is LGPL v3 with no `--enable-gpl` / `--enable-nonfree`. | Verified in M0 |
 | Tauri plugins | `tauri-plugin-global-shortcut` 2.4.1, `tauri-plugin-single-instance` 2.5.4 (latest stable; the crates also have 3.0 alphas, not used). Tray icon is a Tauri core feature. | Verified |
 | This machine | Windows 11 Enterprise build 26200; Core Ultra 7 265U (14 threads); 31.5 GB RAM; Intel integrated graphics; 3 monitors (1920x1080, 1920x1080, 1536x960); only built-in speakers and microphone array (no external mic or headset); 192 GB free on C:. | Verified |
 
@@ -87,9 +88,29 @@ app runs `ffmpeg -version` and **refuses to run a build whose configuration cont
 SHA-256, and extracts only `ffmpeg.exe` into `src-tauri/binaries/` (git-ignored). The sidecar is configured in a
 Windows-only config file so the macOS CI build does not need a macOS FFmpeg yet.
 
-H.264 choice: `h264_mf` first (it uses a hardware encoder when the machine has one and Microsoft's software encoder
-otherwise), `libopenh264` second if the build includes it, otherwise the UI offers audio-only. The detected encoder
-fills the existing `video_encoders` capability. See decision 2.
+H.264 choice, as settled by M0: `h264_mf` with `-hw_encoding 1` and NV12 input first (on this machine it picks the
+Intel Quick Sync encoder at about 0.11 CPU-s per video-s; without `-hw_encoding` it silently picks a software encoder at
+0.42), then `libopenh264` (0.12 to 0.19), then `h264_mf` in software mode, otherwise the UI offers audio-only. The
+detected encoder fills the existing `video_encoders` capability. See decision 2.
+
+### Settings and constraints found in M0
+
+These come from measurements (details in [phase-2-spikes.md](phase-2-spikes.md)) and are binding for M1 and M2.
+
+- Fragmented MP4 must use `-movflags +frag_keyframe+empty_moov+default_base_moof+delay_moov`; every track uses
+  `-flush_packets 1`. Without these a hard kill loses the whole file (hardware encoder) or up to a megabyte of FLAC.
+- The capture frames are converted from BGRA to NV12 before encoding (about 0.11 CPU-s per video-s at 1080p15).
+- System-audio loopback delivers nothing while no program plays audio. The recorder keeps a silent render stream open
+  on the same output device while recording and still fills any remaining gap with silence by clock.
+- Windows.Graphics.Capture sends the first frame within about 0.2 s and then only on change (gaps up to 9.55 s seen),
+  so the pacer repeats the last frame. Monitors are chosen by device name or handle, never by index; sizes are physical
+  pixels.
+- Recovery trims every track to the shortest common end.
+- cpal 0.18.2 (the released API, not GitHub master) is used for both microphone and loopback; overruns arrive as
+  `ErrorKind::Xrun` through the error callback.
+- Measured clock drift on this machine's built-in devices is about 0.2 ppm over 10 minutes, so the resampler is
+  expected to be idle there. It stays in the plan for USB and Bluetooth devices and is measured with the external
+  microphone in M4.
 
 ### Failure handling
 
@@ -181,7 +202,7 @@ Each step ends with passing tests and a commit. I stop and report if a step brea
 
 | Step | Contents | Gate |
 |---|---|---|
-| M0 Spikes | FFmpeg download, license and encoder check; a few seconds of real capture; mic and loopback timestamps and device formats; a 10-minute drift measurement. Findings written to `docs/`. | If an assumption fails (for example no `h264_mf`, or cpal timestamps unusable), stop and ask before continuing. |
+| M0 Spikes (**done 2026-10-16**) | FFmpeg download, license and encoder check; a few seconds of real capture; mic and loopback timestamps and device formats; a 10-minute drift measurement. Findings in `docs/phase-2-spikes.md`. | No assumption failed. One refinement: encoder order (see Section 3). |
 | M1 Core | Everything that needs no hardware: clock, state machine, pacer, drift correction, folder layout, `meeting.json`, migration 0002, disk guard, FFmpeg manager, synthetic sources, end-to-end and recovery tests. | Tests green locally and in CI. |
 | M2 Windows sources | Real capture and audio, sleep guard, window exclusion, session events, disk space, capability probe updates. | Smoke recordings on this machine. |
 | M3 UI | Record screen, control window, tray, hotkeys, consent, banners, recovery prompt, playback. | Vitest plus a manual pass. |
@@ -204,8 +225,10 @@ tests and only has to compile.
    IT allow-listed. A distributed build needs the code-signing certificate from SPEC Section 12.
 5. **Capture border.** Windows may draw a border around the captured monitor. It is not captured in the video, but it is
    visible. Whether it can be turned off depends on the Windows build; to be checked in the spike and documented.
-6. **Unverified assumptions** (M0 exists to settle them): FFmpeg encoder list, cpal timestamp quality, whether the
-   adaptive resampler holds the 100 ms budget, behaviour of `h264_mf` with this machine's Intel graphics.
+6. **Still unverified after M0:** whether the adaptive resampler holds the 100 ms budget on a drifting (USB or
+   Bluetooth) device; whether the capture border is really hidden by `WithoutBorder`; whether the pinned FFmpeg release
+   stays downloadable (dated BtbN releases expire, so a copy we control is needed); behaviour on the reference-class
+   machine, which is not available here.
 
 ## 10. Decisions (2026-10-16)
 

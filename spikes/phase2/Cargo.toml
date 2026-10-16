@@ -1,0 +1,14 @@
+# Phase 2 / M0 spikes: throwaway measurements that check the assumptions in docs/phase-2-plan.md.
+# Not part of the product and not built by CI. Findings are written up in docs/phase-2-spikes.md.
+[package]
+name = "phase2-spikes"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1"
+cpal = "0.18.2"
+windows-capture = "2.0.1"
+
+[workspace]
