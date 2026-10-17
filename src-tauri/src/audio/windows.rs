@@ -55,13 +55,21 @@ fn describe(device: &Device, default_id: &Option<String>) -> Result<AudioDeviceI
     })
 }
 
+/// The audio host, after making sure COM stays up for the whole process. cpal keeps one device enumerator for the
+/// process, bound to the COM state of the first thread that used it; if that thread ends and COM shuts down, the next
+/// thread to use the enumerator crashes. Every use of cpal goes through here.
+fn audio_host() -> cpal::Host {
+    crate::system::keep_component_runtime_alive();
+    cpal::default_host()
+}
+
 fn id_of(device: Option<Device>) -> Option<String> {
     device.and_then(|d| d.id().ok()).map(|id| id.to_string())
 }
 
 /// Microphones and other input devices, the default one flagged.
 pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
-    let host = cpal::default_host();
+    let host = audio_host();
     let default_id = id_of(host.default_input_device());
     host.input_devices()
         .map_err(device_error)?
@@ -71,7 +79,7 @@ pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 
 /// Output devices (speakers, headsets): the ones whose sound can be captured as system audio.
 pub fn list_speakers() -> Result<Vec<AudioDeviceInfo>, AudioError> {
-    let host = cpal::default_host();
+    let host = audio_host();
     let default_id = id_of(host.default_output_device());
     host.output_devices()
         .map_err(device_error)?
@@ -81,7 +89,7 @@ pub fn list_speakers() -> Result<Vec<AudioDeviceInfo>, AudioError> {
 
 /// The default output device, or `None` if the computer has none.
 pub fn default_speakers() -> Result<Option<AudioDeviceInfo>, AudioError> {
-    let host = cpal::default_host();
+    let host = audio_host();
     match host.default_output_device() {
         Some(device) => describe(&device, &id_of(Some(device.clone()))).map(Some),
         None => Ok(None),
@@ -162,8 +170,7 @@ impl CpalAudioSource {
     }
 
     fn new(kind: Kind, device_id: Option<&str>) -> Result<Self, AudioError> {
-        crate::system::keep_component_runtime_alive();
-        let host = cpal::default_host();
+        let host = audio_host();
         let device = find_device(&host, kind, device_id).ok_or_else(|| {
             AudioError::Device(match kind {
                 Kind::Microphone => "no microphone was found".to_string(),
@@ -297,7 +304,7 @@ impl Worker {
     fn open(&mut self) -> Result<(), String> {
         self.capture = None;
         self.render = None;
-        let host = cpal::default_host();
+        let host = audio_host();
         let wanted = if self.follow_default {
             None
         } else {
@@ -487,4 +494,27 @@ fn silent<T: SizedSample + Send + 'static>(
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// cpal keeps one device enumerator for the whole process, created on the first thread that asks and bound to that
+    /// thread's COM state. When that thread ends and nothing else keeps COM alive, COM shuts down and the next thread to
+    /// use the enumerator crashes (access violation). Device lookups must therefore keep the component runtime alive
+    /// themselves. One short-lived thread after another is exactly the situation (a test runner, a worker per request).
+    #[test]
+    fn device_lookups_on_one_short_lived_thread_after_another_do_not_crash() {
+        for round in 0..6 {
+            std::thread::spawn(|| {
+                // Whether devices exist does not matter here (a CI runner has none); surviving does.
+                let _ = default_speakers();
+                let _ = list_microphones();
+                let _ = list_speakers();
+            })
+            .join()
+            .unwrap_or_else(|_| panic!("lookup thread {round} panicked"));
+        }
+    }
 }
