@@ -123,7 +123,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
           {usingDefaultFolder ? 'This is the default folder.' : 'This is a folder you chose.'} MeetingMind creates
           it when the first recording is saved.
         </p>
-        {syncedBy && <Notice tone="warning">{cloudSyncWarning(syncedBy)}</Notice>}
+        {syncedBy && <Notice tone="warning">{cloudSyncWarning(syncedBy, 'settings')}</Notice>}
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void chooseFolder()}>
             Choose folder…

@@ -198,6 +198,19 @@ export interface RecoveredRecording {
 /** The event the recorder sends its status on. */
 export const STATUS_EVENT = 'recorder-status'
 
+/**
+ * Preview start and stop must reach the backend in the order they were asked. Backend commands run on a thread pool
+ * with no promise about order, so a quick start, stop, start (the screen opened again, another monitor chosen) could
+ * be carried out as start, start, stop and leave the preview off while the screen waits for it. Each call here starts
+ * only after the one before it has finished.
+ */
+let previewCalls: Promise<unknown> = Promise.resolve()
+function inOrder<T>(call: () => Promise<T>): Promise<T> {
+  const run = previewCalls.then(call)
+  previewCalls = run.catch(() => undefined)
+  return run
+}
+
 export const ipc = {
   getAppInfo: () => invoke<AppInfo>('get_app_info'),
   getSettings: () => invoke<Settings>('get_settings'),
@@ -208,8 +221,8 @@ export const ipc = {
   estimateRecording: (setup: RecordingSetup) => invoke<Estimate>('estimate_recording', { setup }),
   /** The cloud storage program that uploads this folder, or null for an ordinary folder. */
   storageSyncProvider: (path: string) => invoke<string | null>('storage_sync_provider', { path }),
-  startPreview: (monitorId: string | null) => invoke<void>('start_preview', { monitorId }),
-  stopPreview: () => invoke<void>('stop_preview'),
+  startPreview: (monitorId: string | null) => inOrder(() => invoke<void>('start_preview', { monitorId })),
+  stopPreview: () => inOrder(() => invoke<void>('stop_preview')),
   getPreviewFrame: (since: number) => invoke<ArrayBuffer>('get_preview_frame', { since }),
 
   recordingStatus: () => invoke<RecorderStatus>('recording_status'),

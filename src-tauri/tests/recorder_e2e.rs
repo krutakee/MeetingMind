@@ -450,3 +450,54 @@ fn a_notice_from_the_app_shows_with_the_recordings_own_warnings_and_is_gone_afte
     );
     rig.recorder.stop().unwrap();
 }
+
+#[test]
+fn the_video_encoder_capability_names_the_encoder_and_a_short_ffmpeg_version() {
+    use meetingmind_lib::system::{CapabilityId, CapabilityStatus};
+
+    let Some(tools) = tools_or_skip("encoder capability") else {
+        return;
+    };
+    let rig = rig(tools);
+
+    let capability = rig.recorder.video_encoder_capability();
+
+    assert_eq!(capability.id, CapabilityId::VideoEncoders);
+    assert_eq!(capability.status, CapabilityStatus::Detected);
+    assert!(
+        capability
+            .value
+            .as_deref()
+            .is_some_and(|v| v.contains("h264") || v.contains("openh264")),
+        "{capability:?}"
+    );
+    assert!(
+        capability.detail.contains("ffmpeg version"),
+        "{}",
+        capability.detail
+    );
+    assert!(
+        !capability.detail.contains("Copyright"),
+        "the version line is shortened: {}",
+        capability.detail
+    );
+}
+
+#[test]
+fn without_ffmpeg_the_video_encoder_capability_says_why_it_is_unavailable() {
+    use meetingmind_lib::system::CapabilityStatus;
+
+    let rig = rig_with(SyntheticDevices::new(640, 360), || {
+        Err("ffmpeg.exe was not found next to the app".to_string())
+    });
+
+    let capability = rig.recorder.video_encoder_capability();
+
+    assert_eq!(capability.status, CapabilityStatus::Unavailable);
+    assert_eq!(capability.value, None);
+    assert!(
+        capability.detail.contains("ffmpeg.exe was not found"),
+        "{}",
+        capability.detail
+    );
+}

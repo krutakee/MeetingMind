@@ -48,7 +48,7 @@ describe('MonitorPreview', () => {
 
     unmount()
 
-    expect(backend.argsOf('stop_preview')).toHaveLength(1)
+    await waitFor(() => expect(backend.argsOf('stop_preview')).toHaveLength(1))
   })
 
   it('restarts for another monitor', async () => {
@@ -60,7 +60,12 @@ describe('MonitorPreview', () => {
 
     await waitFor(() => expect(backend.argsOf('start_preview')).toHaveLength(2))
     expect(backend.argsOf('start_preview')[1]).toEqual({ monitorId: 'B' })
-    expect(backend.argsOf('stop_preview')).toHaveLength(1)
+    // Asked in this order: start A, stop, start B.
+    expect(backend.calls.filter((c) => c.command.endsWith('_preview')).map((c) => c.command)).toEqual([
+      'start_preview',
+      'stop_preview',
+      'start_preview',
+    ])
   })
 
   it('waits quietly for the first picture', async () => {

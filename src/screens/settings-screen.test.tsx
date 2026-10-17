@@ -160,7 +160,9 @@ describe('Settings screen: cloud storage warning', () => {
     await openSettings()
 
     const storage = screen.getByRole('region', { name: 'Storage' })
-    expect(await within(storage).findByText(/synced by OneDrive/)).toBeInTheDocument()
+    const warning = await within(storage).findByText(/synced by OneDrive/)
+    expect(warning).toHaveTextContent('Choose another folder below')
+    expect(warning).not.toHaveTextContent('in Settings')
     expect(backend.argsOf('storage_sync_provider')).toEqual([{ path: DEFAULT_INFO.defaultStorageFolder }])
   })
 

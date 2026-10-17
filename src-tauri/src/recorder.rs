@@ -308,7 +308,7 @@ impl Recorder {
                     Some(kind.label().to_string()),
                     format!(
                         "The H.264 encoder used for recordings ({}).",
-                        tools.ffmpeg.version
+                        short_version(&tools.ffmpeg.version)
                     ),
                 ),
                 Err(why) => (
@@ -672,6 +672,11 @@ impl Recorder {
             _ => None,
         }
     }
+}
+
+/// `ffmpeg -version` starts with a long line ("ffmpeg version n9.0.2 Copyright (c) 2000-2026 ..."): keep the version.
+fn short_version(line: &str) -> &str {
+    line.split(" Copyright").next().unwrap_or(line).trim()
 }
 
 fn phase_of(session: &Session) -> Phase {

@@ -271,7 +271,7 @@ export function SetupPanel() {
               <p className="text-muted-foreground">Working out how much space this needs…</p>
             )}
           </section>
-          {estimate?.storageSyncedBy && <Notice tone="warning">{cloudSyncWarning(estimate.storageSyncedBy)}</Notice>}
+          {estimate?.storageSyncedBy && <Notice tone="warning">{cloudSyncWarning(estimate.storageSyncedBy, 'record')}</Notice>}
           {tooLittleSpace && (
             <Notice tone="warning">
               There is less free space than one hour of this recording can need. Free some space or choose a lower

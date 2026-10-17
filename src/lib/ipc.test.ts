@@ -104,6 +104,34 @@ describe('recording commands', () => {
   })
 })
 
+describe('preview commands', () => {
+  it('reach the backend one at a time, in the order they were asked', async () => {
+    const seen: string[] = []
+    let running = 0
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      running += 1
+      seen.push(`${command}${args ? ':' + JSON.stringify(args) : ''}${running > 1 ? ' OVERLAPPED' : ''}`)
+      // The first call is the slowest: without ordering, the later ones would overtake it.
+      await new Promise((resolve) => setTimeout(resolve, command === 'start_preview' ? 40 : 5))
+      running -= 1
+      return undefined
+    })
+
+    await Promise.all([ipc.startPreview('A'), ipc.stopPreview(), ipc.startPreview('B')])
+
+    expect(seen).toEqual(['start_preview:{"monitorId":"A"}', 'stop_preview', 'start_preview:{"monitorId":"B"}'])
+  })
+
+  it('keep going after one of them fails', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('no monitor')).mockResolvedValue(undefined)
+
+    await expect(ipc.startPreview('X')).rejects.toThrow('no monitor')
+    await expect(ipc.stopPreview()).resolves.toBeUndefined()
+
+    expect(invoke).toHaveBeenLastCalledWith('stop_preview')
+  })
+})
+
 describe('storage folder check', () => {
   it('asks the backend which cloud storage program uploads a folder', async () => {
     vi.mocked(invoke).mockResolvedValue('OneDrive')

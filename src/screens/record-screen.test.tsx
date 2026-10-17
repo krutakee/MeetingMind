@@ -78,6 +78,7 @@ describe('Record screen: setting up', () => {
     const warning = await screen.findByText(/synced by OneDrive/)
     expect(warning).toHaveTextContent('uploaded to its servers')
     expect(warning).toHaveTextContent('never sends anything anywhere')
+    expect(warning).toHaveTextContent('Choose another folder in Settings')
     expect(warning.closest('[role="alert"]')).not.toBeNull()
   })
 

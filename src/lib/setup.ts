@@ -46,11 +46,15 @@ export function reconcileWithDevices(setup: RecordingSetup, devices: DeviceLists
   }
 }
 
-/** The warning shown when the storage folder is uploaded by a cloud storage program. */
-export function cloudSyncWarning(provider: string): string {
+/**
+ * The warning shown when the storage folder is uploaded by a cloud storage program. `where` is the screen it is
+ * shown on, so the advice does not point at the page the reader is already on.
+ */
+export function cloudSyncWarning(provider: string, where: 'record' | 'settings'): string {
+  const advice =
+    where === 'record' ? 'Choose another folder in Settings if that is not what you want.' : 'Choose another folder below if that is not what you want.'
   return (
     `This folder is synced by ${provider}, so your recordings (the video and sound of your meetings) are uploaded to ` +
-    `its servers. MeetingMind itself never sends anything anywhere. Choose another folder in Settings if that is not ` +
-    `what you want.`
+    `its servers. MeetingMind itself never sends anything anywhere. ${advice}`
   )
 }
