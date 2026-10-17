@@ -258,6 +258,15 @@ one process.
   in is destroyed when the last thread using it ends. The fix keeps the apartment open for the life of the process
   (`system::keep_component_runtime_alive`, called before the first device is used). Regression tests record several
   times in one process.
+- **The same kind of crash, found only in CI, with a cause that is likely but not proven.** The first complete Windows
+  CI run of the M2 code ended with an access violation in the library test binary (all integration tests passed).
+  `cpal` 0.18.2 keeps one device enumerator for the whole process, created on the first thread that uses it and bound
+  to that thread's COM state; the capability probe looked up devices without keeping COM alive, so when a test thread
+  ended and COM shut down, the next thread to use the enumerator crashed. All cpal use now goes through one helper
+  (`audio::windows::audio_host`) that keeps COM alive first. **This was not reproduced on IV-LT-Han** (before the fix:
+  0 failures in 40 runs of the probe tests, 15 runs of a concurrent test, 10 runs of a sequential one), so the cause
+  comes from reading the `cpal` source and matching it to the CI log, and the fix is judged by repeated CI runs
+  (see the phase report for how many), not by a reproduction. A sequential regression test was added anyway.
 - **Keep-awake** uses a Windows power request (process-wide, not tied to a thread); the display is kept on only while
   recording the screen. Tested with the real API and, in whole recordings, with a test double.
 - **Capabilities** now report system-audio capture (the default output device) and capture exclusion (Windows build
