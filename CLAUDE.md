@@ -46,8 +46,9 @@ Phase 1 delivered: Tauri + React app, navigation, settings, SQLite with migratio
 skeleton, CI on Windows and macOS. Acceptance: app launches on Windows (checked locally); CI green on `windows-latest`
 and `macos-latest` (run 38941862010, commit f1edde7); migration tests pass (locally and in CI).
 
-Phase 2 status: M0 to M3 done (2026-10-17). M4 (acceptance: 2-hour drift and memory, kill-and-recover, mic unplug with a
-real external microphone, control window absent from the video by a scripted check, CI sidecar cache, phase report) is next.
+Phase 2 status: M0 to M4 done (2026-10-17); report: docs/phase-2-report.md. Three of the four acceptance criteria are met
+and measured. **Open: unplugging the microphone, on a real external microphone** (passes with a synthetic one;
+`src-tauri/tests/mic_unplug.rs` is ready and needs the hardware and a person). Phase 2 is not accepted until that is done.
 Plan approved 2026-10-16: docs/phase-2-plan.md. Scope and acceptance criteria are in
 SPEC.md Section 11 and ROADMAP.md. Per phase: run tests, commit, report what works / what doesn't / what's blocked, STOP.
 

@@ -28,7 +28,8 @@ use windows_capture::settings::{
 };
 
 use super::{
-    CaptureError, LossReason, MonitorInfo, ScreenEvent, ScreenSource, VideoFrame, send_event,
+    CaptureError, FrameRelay, LossReason, MonitorInfo, ScreenEvent, ScreenSource, VideoFrame,
+    send_event,
 };
 use crate::recording::clock::MonotonicClock;
 use crate::system::{SessionEvent, SessionWatcher, watch_session};
@@ -130,6 +131,8 @@ fn captured_time(now: Duration, now_ticks: i64, stamp_ticks: i64) -> Duration {
 struct HandlerFlags {
     clock: Arc<dyn MonotonicClock>,
     events: SyncSender<ScreenEvent>,
+    /// Frames go to the recorder through this; one that finds the queue full is kept, not thrown away.
+    relay: Arc<FrameRelay>,
     /// Frames closer together than this are skipped before they are copied. `None` when Windows itself limits how
     /// often frames are delivered (see `begin`): then nothing is skipped here, because a skipped frame is a state of
     /// the screen that is never recorded if nothing changes afterwards (a flash of 0.4 s was missed 13 % of the time).
@@ -178,13 +181,12 @@ impl GraphicsCaptureApiHandler for Handler {
         let (width, height) = (frame.width(), frame.height());
         let buffer = frame.buffer()?;
         let pixels = buffer.as_nopadding_buffer(&mut self.scratch).to_vec();
-        // A full queue means the recorder is behind: dropping this frame is right (the pacer repeats the last one).
-        let _ = self.flags.events.try_send(ScreenEvent::Frame(VideoFrame {
+        self.flags.relay.offer(VideoFrame {
             captured_at,
             width,
             height,
             bgra: Arc::new(pixels),
-        }));
+        });
         Ok(())
     }
 
@@ -258,6 +260,8 @@ fn begin_best(
 struct Running {
     control: Arc<Mutex<Option<Control>>>,
     stop: Arc<AtomicBool>,
+    relay: Arc<FrameRelay>,
+    flusher: Option<JoinHandle<()>>,
     supervisor: Option<JoinHandle<()>>,
     _session_watcher: Option<SessionWatcher>,
 }
@@ -296,12 +300,14 @@ impl WindowsScreenSource {
         &self,
         clock: &Arc<dyn MonotonicClock>,
         events: &SyncSender<ScreenEvent>,
+        relay: &Arc<FrameRelay>,
         closed: &Arc<AtomicBool>,
         os_throttled: bool,
     ) -> HandlerFlags {
         HandlerFlags {
             clock: clock.clone(),
             events: events.clone(),
+            relay: relay.clone(),
             min_interval: (!os_throttled).then(|| frame_interval(self.max_fps)),
             closed: closed.clone(),
         }
@@ -330,10 +336,28 @@ impl ScreenSource for WindowsScreenSource {
     ) -> Result<(), CaptureError> {
         self.stop();
         let closed = Arc::new(AtomicBool::new(false));
-        let control =
-            self.begin_capture(|throttled| self.flags(&clock, &events, &closed, throttled))?;
+        let relay = Arc::new(FrameRelay::new(events.clone()));
+        let control = self
+            .begin_capture(|throttled| self.flags(&clock, &events, &relay, &closed, throttled))?;
         let control = Arc::new(Mutex::new(Some(control)));
         let stop = Arc::new(AtomicBool::new(false));
+
+        // A frame the recorder had no room for is sent again as soon as there is room. Nothing arrives to trigger that
+        // on a still screen, so a thread does it.
+        let flusher = {
+            let (relay, stop) = (relay.clone(), stop.clone());
+            std::thread::Builder::new()
+                .name("screen-flusher".into())
+                .spawn(move || {
+                    while !stop.load(Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(10));
+                        if !relay.flush() {
+                            break;
+                        }
+                    }
+                })
+                .map_err(capture_error)?
+        };
 
         // Screen lock and unlock: delivered as events so the recording shows black for the gap.
         let lock_clock = clock.clone();
@@ -359,6 +383,7 @@ impl ScreenSource for WindowsScreenSource {
         // If the capture ends by itself (monitor unplugged), start it again when the monitor is back.
         let supervisor = {
             let (control, stop, closed) = (control.clone(), stop.clone(), closed.clone());
+            let relay = relay.clone();
             let (monitor_id, max_fps) = (self.monitor.id.clone(), self.max_fps);
             std::thread::Builder::new()
                 .name("screen-supervisor".into())
@@ -372,6 +397,7 @@ impl ScreenSource for WindowsScreenSource {
                         let flags = |throttled: bool| HandlerFlags {
                             clock: clock.clone(),
                             events: events.clone(),
+                            relay: relay.clone(),
                             min_interval: (!throttled).then_some(interval),
                             closed: closed.clone(),
                         };
@@ -389,6 +415,8 @@ impl ScreenSource for WindowsScreenSource {
         self.running = Some(Running {
             control,
             stop,
+            relay,
+            flusher: Some(flusher),
             supervisor: Some(supervisor),
             _session_watcher: session_watcher,
         });
@@ -404,6 +432,18 @@ impl ScreenSource for WindowsScreenSource {
             }
             if let Some(control) = running.control.lock().unwrap().take() {
                 let _ = control.stop();
+            }
+            if let Some(flusher) = running.flusher.take() {
+                let _ = flusher.join();
+            }
+            // A frame still waiting is from before the stop (a pause, say): it must not appear after the next start.
+            let held_back = running.relay.held_back();
+            running.relay.clear();
+            if held_back > 0 {
+                info!(
+                    frames_that_had_to_wait = held_back,
+                    "the recorder's queue was full at times; no frame was lost"
+                );
             }
         }
     }

@@ -311,8 +311,9 @@ pub fn quit(app: &AppHandle) {
                     warn!(%error, "the recording could not be saved before quitting");
                 }
             }
-            // A recording that was already being saved: wait for it, but not forever.
-            for _ in 0..600 {
+            // A recording that was already being saved: wait for it, but not forever. Saving a 2-hour recording took
+            // 134 to 151 s on the development computer.
+            for _ in 0..3000 {
                 if recorder.phase() == Phase::Idle {
                     break;
                 }
