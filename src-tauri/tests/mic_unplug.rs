@@ -53,6 +53,11 @@ fn wait_for(what: &str, limit: Duration, recorder: &Recorder, mut condition: imp
 #[test]
 #[ignore = "needs an external microphone and a person to unplug it"]
 fn unplugging_the_microphone_does_not_stop_the_recording() {
+    // The recorder logs (never any meeting content) why a device could not be reopened; show it on stderr.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("meetingmind_lib=info")
+        .with_writer(std::io::stderr)
+        .try_init();
     let run = std::env::temp_dir().join(format!("meetingmind-mic-unplug-{}", std::process::id()));
     std::fs::create_dir_all(&run).unwrap();
     let database = Arc::new(Database::open(&run.join("test.db")).unwrap());
@@ -140,12 +145,15 @@ fn unplugging_the_microphone_does_not_stop_the_recording() {
         "the unplugging is listed as a deviceLost gap on the microphone: {:?}",
         metadata.gaps
     );
+    // Plugging a USB headset in or out also moves the default output, and the system audio follows it: that takes about a
+    // second to rebuild. What must not happen (it did, on 2026-10-17, when the headset had another sample rate) is the
+    // system audio staying silent after the change.
     assert!(
         !metadata
             .gaps
             .iter()
-            .any(|g| g.stream != StreamKind::Microphone && g.end_ms - g.start_ms > 1000),
-        "the screen and the system audio were not affected: {:?}",
+            .any(|g| g.stream != StreamKind::Microphone && g.end_ms - g.start_ms > 3000),
+        "the screen and the system audio carried on: {:?}",
         metadata.gaps
     );
     let _ = std::fs::remove_dir_all(&run);

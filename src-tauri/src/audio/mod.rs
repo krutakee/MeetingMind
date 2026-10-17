@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use crate::recording::clock::MonotonicClock;
 
+pub mod convert;
+
 #[cfg(windows)]
 pub mod windows;
 

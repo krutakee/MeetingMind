@@ -13,12 +13,15 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use tracing::{info, warn};
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
     Device, Error as CpalError, ErrorKind, FromSample, InputCallbackInfo, OutputCallbackInfo,
     Sample, SampleFormat, SizedSample, Stream, StreamConfig, SupportedStreamConfig,
 };
 
+use super::convert::FormatConverter;
 use super::{AudioChunk, AudioError, AudioEvent, AudioFormat, AudioSource, send_event};
 use crate::recording::clock::MonotonicClock;
 
@@ -195,6 +198,7 @@ impl CpalAudioSource {
             capture: None,
             render: None,
             last_reopen: None,
+            last_open_error: None,
         };
         let thread = std::thread::Builder::new()
             .name(format!("audio-{kind:?}"))
@@ -269,6 +273,8 @@ struct Worker {
     /// Loopback only: a stream that plays silence so the output device is active and loopback delivers data.
     render: Option<Stream>,
     last_reopen: Option<Instant>,
+    /// Why the last attempt to reopen a lost device failed, so a reason is logged once and not every two seconds.
+    last_open_error: Option<String>,
 }
 
 impl Worker {
@@ -311,14 +317,29 @@ impl Worker {
             sample_rate: config.sample_rate(),
             channels: config.channels(),
         };
-        if format != self.format {
-            // The recording's encoder was started for the old format; samples in another format cannot be written to it.
-            return Err(format!(
-                "the device now uses {} Hz, {} channels instead of {} Hz, {} channels",
-                format.sample_rate, format.channels, self.format.sample_rate, self.format.channels
-            ));
+        // The recording's encoder was started for the first device's format and cannot change. A device with another
+        // format (a headset that was plugged in) is converted to it instead of being refused, which would leave this
+        // track silent for the rest of the recording.
+        let converter = (format != self.format).then(|| FormatConverter::new(format, self.format));
+        if converter.is_some() {
+            info!(
+                from_hz = format.sample_rate,
+                from_channels = format.channels,
+                to_hz = self.format.sample_rate,
+                to_channels = self.format.channels,
+                "the audio device has another format than the recording: converting"
+            );
         }
-        let capture = build_capture_stream(&device, &config, self.sink.clone(), self.lost.clone())?;
+        if let Some(id) = device.id().ok().map(|id| id.to_string()) {
+            self.device_id = id; // the device now in use (it can be another one when following the default)
+        }
+        let capture = build_capture_stream(
+            &device,
+            &config,
+            self.sink.clone(),
+            self.lost.clone(),
+            converter,
+        )?;
         let _ = capture.pause(); // nothing flows until `start`
         self.capture = Some(capture);
         if self.kind == Kind::Loopback {
@@ -334,7 +355,8 @@ impl Worker {
         clock: Arc<dyn MonotonicClock>,
         events: SyncSender<AudioEvent>,
     ) -> Result<(), String> {
-        if self.capture.is_none() {
+        // After a pause the default device may be another one.
+        if self.capture.is_none() || self.default_changed() {
             self.open()?;
         }
         self.lost.store(false, Ordering::SeqCst);
@@ -359,9 +381,51 @@ impl Worker {
         }
     }
 
-    /// While recording, a lost device is retried every couple of seconds.
+    /// Logs why a lost device could not be brought back, once per distinct reason (it is retried every two seconds,
+    /// and an unplugged device can stay away for an hour).
+    fn note_reopen_failure(&mut self, error: String) {
+        if self.last_open_error.as_deref() != Some(error.as_str()) {
+            warn!(%error, kind = ?self.kind, "the audio device could not be reopened yet; trying again");
+            self.last_open_error = Some(error);
+        }
+    }
+
+    /// True if the user follows the default device and the default is now another device than the one in use.
+    fn default_changed(&self) -> bool {
+        if !self.follow_default {
+            return false;
+        }
+        let host = audio_host();
+        find_device(&host, self.kind, None)
+            .and_then(|device| device.id().ok())
+            .is_some_and(|id| id.to_string() != self.device_id)
+    }
+
+    /// While recording: follows the default device when it changes (a headset was plugged in or out: the old device
+    /// is still there and its stream is still fine, but it is no longer the one being spoken into or listened on), and
+    /// retries a lost device every couple of seconds.
     fn try_to_bring_the_device_back(&mut self) {
-        if !self.lost.load(Ordering::SeqCst) || self.sink.lock().unwrap().is_none() {
+        let sink = self
+            .sink
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| (s.clock.clone(), s.events.clone()));
+        let Some((clock, events)) = sink else {
+            return;
+        };
+        if !self.lost.load(Ordering::SeqCst) && self.default_changed() {
+            self.lost.store(true, Ordering::SeqCst);
+            self.last_reopen = None; // try the new device at once
+            send_event(
+                &events,
+                AudioEvent::DeviceLost {
+                    reason: "the default device was changed".to_string(),
+                    at: clock.now(),
+                },
+            );
+        }
+        if !self.lost.load(Ordering::SeqCst) {
             return;
         }
         if self
@@ -375,12 +439,16 @@ impl Worker {
             Some(sink) => (sink.clock.clone(), sink.events.clone()),
             None => return,
         };
-        if self.open().is_err() {
+        if let Err(error) = self.open() {
+            self.note_reopen_failure(error);
             return;
         }
-        let started = self.start(clock.clone(), events.clone());
-        if started.is_ok() {
-            send_event(&events, AudioEvent::DeviceRestored { at: clock.now() });
+        match self.start(clock.clone(), events.clone()) {
+            Ok(()) => {
+                self.last_open_error = None;
+                send_event(&events, AudioEvent::DeviceRestored { at: clock.now() });
+            }
+            Err(error) => self.note_reopen_failure(error),
         }
     }
 }
@@ -390,12 +458,13 @@ fn build_capture_stream(
     supported: &SupportedStreamConfig,
     sink: SharedSink,
     lost: Arc<AtomicBool>,
+    converter: Option<FormatConverter>,
 ) -> Result<Stream, String> {
     let config = supported.config();
     match supported.sample_format() {
-        SampleFormat::F32 => capture::<f32>(device, config, sink, lost),
-        SampleFormat::I16 => capture::<i16>(device, config, sink, lost),
-        SampleFormat::I32 => capture::<i32>(device, config, sink, lost),
+        SampleFormat::F32 => capture::<f32>(device, config, sink, lost, converter),
+        SampleFormat::I16 => capture::<i16>(device, config, sink, lost, converter),
+        SampleFormat::I32 => capture::<i32>(device, config, sink, lost, converter),
         other => Err(format!("the sample format {other} is not supported yet")),
     }
 }
@@ -405,6 +474,7 @@ fn capture<T>(
     config: StreamConfig,
     sink: SharedSink,
     lost: Arc<AtomicBool>,
+    mut converter: Option<FormatConverter>,
 ) -> Result<Stream, String>
 where
     T: SizedSample + Send + 'static,
@@ -427,6 +497,10 @@ where
                     .saturating_duration_since(timestamp.capture);
                 let captured_at = clock.now().saturating_sub(age);
                 let samples: Vec<f32> = data.iter().map(|&s| f32::from_sample(s)).collect();
+                let samples = match &mut converter {
+                    Some(converter) => converter.convert(&samples),
+                    None => samples,
+                };
                 // A full queue means the consumer is behind: drop this chunk (it becomes a logged gap), never block.
                 let _ = events.try_send(AudioEvent::Chunk(AudioChunk {
                     captured_at,

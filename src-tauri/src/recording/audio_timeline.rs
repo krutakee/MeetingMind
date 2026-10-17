@@ -276,9 +276,10 @@ fn least_squares_slope(points: &VecDeque<(f64, u64)>) -> Option<f64> {
     (den > 0.0).then(|| num / den)
 }
 
-/// Stateful linear-interpolation resampler for ratios within a few hundred ppm of 1.
+/// Stateful linear-interpolation resampler. Used for the tiny corrections of a drifting device clock (ratios within a
+/// few hundred ppm of 1) and, in `audio::convert`, to bring a device of another sample rate to the recording's rate.
 /// `step` is how many input frames one output frame advances (1.0 = unchanged).
-struct LinearResampler {
+pub(crate) struct LinearResampler {
     channels: usize,
     step: f64,
     /// Position of the next output frame, in input frames relative to the start of the next chunk.
@@ -288,7 +289,7 @@ struct LinearResampler {
 }
 
 impl LinearResampler {
-    fn new(channels: usize, step: f64) -> Self {
+    pub(crate) fn new(channels: usize, step: f64) -> Self {
         Self {
             channels,
             step,
@@ -301,7 +302,7 @@ impl LinearResampler {
         self.step = step;
     }
 
-    fn process(&mut self, input: &[f32]) -> Vec<f32> {
+    pub(crate) fn process(&mut self, input: &[f32]) -> Vec<f32> {
         let ch = self.channels;
         let frames = input.len() / ch;
         if frames == 0 {
