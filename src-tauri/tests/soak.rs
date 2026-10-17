@@ -32,7 +32,6 @@ use meetingmind_lib::recording::ffmpeg::{self, FfmpegInfo};
 use meetingmind_lib::recording::metadata::MeetingMetadata;
 use meetingmind_lib::recording::setup::RecordingSetup;
 use meetingmind_lib::storage::Database;
-use sysinfo::{ProcessesToUpdate, System};
 
 /// Where the marker window is, in physical pixels of the main monitor.
 const WINDOW: (i32, i32, i32, i32) = (100, 100, 300, 300);
@@ -141,7 +140,10 @@ fn marker_thread(
                 gate.store(false, Ordering::SeqCst);
                 window.set_visible(false);
                 made.push(elapsed.as_secs_f64());
-                next += every;
+                // Every marker starts a little later than the grid of minutes: 0 to 66 ms, in a fixed order that covers
+                // the whole range. Otherwise each marker would meet the 15 fps frame grid at the same phase, and the
+                // video side could only be read in steps of 66 ms. Averaged over many markers the steps cancel out.
+                next += every + Duration::from_millis((made.len() as u64 * 23) % 67);
             } else {
                 std::thread::sleep(Duration::from_millis(50).min(next - elapsed));
             }
@@ -151,54 +153,6 @@ fn marker_thread(
 }
 
 // --- memory ------------------------------------------------------------------------------------------------------
-
-struct MemorySample {
-    minute: f64,
-    own_mb: f64,
-    children_mb: f64,
-    children: usize,
-    cpu_percent: f64,
-}
-
-/// Samples this program and its child processes (the FFmpeg encoders) every minute until `stop` is set.
-fn memory_thread(
-    stop: Arc<AtomicBool>,
-    interval: Duration,
-) -> std::thread::JoinHandle<Vec<MemorySample>> {
-    std::thread::spawn(move || {
-        let me = sysinfo::get_current_pid().expect("own process id");
-        let mut system = System::new();
-        let start = Instant::now();
-        let mut samples = Vec::new();
-        let mut next = Duration::ZERO;
-        while !stop.load(Ordering::SeqCst) {
-            if start.elapsed() >= next {
-                system.refresh_processes(ProcessesToUpdate::All, true);
-                let mb = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
-                let own = system.process(me);
-                let children: Vec<_> = system
-                    .processes()
-                    .values()
-                    .filter(|p| p.parent() == Some(me))
-                    .collect();
-                samples.push(MemorySample {
-                    minute: start.elapsed().as_secs_f64() / 60.0,
-                    own_mb: own.map_or(0.0, |p| mb(p.memory())),
-                    children_mb: children.iter().map(|p| mb(p.memory())).sum(),
-                    children: children.len(),
-                    cpu_percent: own.map_or(0.0, |p| f64::from(p.cpu_usage()))
-                        + children
-                            .iter()
-                            .map(|p| f64::from(p.cpu_usage()))
-                            .sum::<f64>(),
-                });
-                next += interval;
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        samples
-    })
-}
 
 fn write_memory_csv(path: &Path, samples: &[MemorySample]) {
     let mut text = String::from("minute,own_mb,children_mb,children,cpu_percent_of_one_core\n");
@@ -272,7 +226,7 @@ fn flash_onsets(info: &FfmpegInfo, video: &Path, region: (u32, u32), fps: f64) -
 }
 
 /// Seconds at which a 1 kHz tone starts in an audio file, by the strength of 1 kHz in every 10 ms.
-fn tone_onsets(info: &FfmpegInfo, audio: &Path) -> Vec<f64> {
+fn tone_onsets(info: &FfmpegInfo, audio: &Path, same_marker_within: f64) -> Vec<f64> {
     const RATE: usize = 16_000;
     const BLOCK: usize = RATE / 100;
     let mut child = Command::new(&info.path)
@@ -310,8 +264,11 @@ fn tone_onsets(info: &FfmpegInfo, audio: &Path) -> Vec<f64> {
     for (i, pair) in strengths.windows(2).enumerate() {
         if pair[0] <= threshold && pair[1] > threshold {
             let t = (i + 1) as f64 / 100.0;
-            // One tone is 0.4 s long; anything within a few seconds of the last onset is the same marker.
-            if onsets.last().is_none_or(|last| t - last > 5.0) {
+            // One tone is 0.4 s long; anything closer to the last onset than half the marker spacing is the same marker.
+            if onsets
+                .last()
+                .is_none_or(|last| t - last > same_marker_within)
+            {
                 onsets.push(t);
             }
         }
@@ -353,6 +310,9 @@ fn slope(points: &[(f64, f64)]) -> f64 {
 
 /// Whether each criterion held (the measurements themselves are printed and written to report.txt).
 struct Verdict {
+    /// Every marker (a flash and a tone) that reached the audio also reached the video: no frame of the screen is
+    /// lost. Allows 2 % for a flash that coincided with something else.
+    frames_ok: Option<bool>,
     drift_ok: Option<bool>,
     memory_ok: Option<bool>,
     lengths_ok: bool,
@@ -451,18 +411,33 @@ fn analyze(run: &Path, marker_every: Duration, minutes_recorded: Option<f64>) ->
         centre,
         f64::from(video.fps),
     );
-    let tones = tone_onsets(&info, &folder.join("system-audio.flac"));
-    let mic_tones = tone_onsets(&info, &folder.join("microphone.flac"));
+    let same_marker_within = (marker_every.as_secs_f64() / 2.0).min(5.0);
+    let tones = tone_onsets(&info, &folder.join("system-audio.flac"), same_marker_within);
+    let mic_tones = tone_onsets(&info, &folder.join("microphone.flac"), same_marker_within);
     say(format!(
         "markers found: {} flashes in the video, {} tones in the system audio, {} tones heard by the microphone",
         flashes.len(),
         tones.len(),
         mic_tones.len()
     ));
+    let frames_ok =
+        (tones.len() >= 10).then_some(flashes.len() as f64 >= tones.len() as f64 * 0.98);
+    if let Some(ok) = frames_ok {
+        say(format!(
+            "flashes in the video: {} of {} markers in the audio {}",
+            flashes.len(),
+            tones.len(),
+            if ok {
+                "(ok)"
+            } else {
+                "(FLASHES MISSING from the video)"
+            }
+        ));
+    }
     let pairs = offsets(&flashes, &tones);
     let mut drift_ok = None;
     if pairs.len() >= 4 {
-        let n = pairs.len().min(10);
+        let n = (pairs.len() / 6).clamp(5, 20);
         let (first, last) = (
             mean(&pairs[..n]) * 1000.0,
             mean(&pairs[pairs.len() - n..]) * 1000.0,
@@ -478,6 +453,16 @@ fn analyze(run: &Path, marker_every: Duration, minutes_recorded: Option<f64>) ->
         let change = last - first;
         say(format!(
             "video minus audio, mean of the first {n} markers: {first:.1} ms; of the last {n}: {last:.1} ms"
+        ));
+        let median = |values: &[f64]| {
+            let mut sorted = values.to_vec();
+            sorted.sort_by(f64::total_cmp);
+            sorted[sorted.len() / 2] * 1000.0
+        };
+        say(format!(
+            "median of the same markers: first {n}: {:.1} ms, last {n}: {:.1} ms",
+            median(&pairs[..n]),
+            median(&pairs[pairs.len() - n..])
         ));
         say(format!(
             "change between them: {change:+.1} ms (limit 100 ms); slope {:+.1} ms per hour; spread of all {} pairs: {spread:.1} ms",
@@ -544,6 +529,7 @@ fn analyze(run: &Path, marker_every: Duration, minutes_recorded: Option<f64>) ->
     }
     std::fs::write(run.join("report.txt"), &report).unwrap();
     Verdict {
+        frames_ok,
         drift_ok,
         memory_ok,
         lengths_ok,
@@ -634,6 +620,12 @@ fn two_hour_recording_keeps_audio_and_video_together_and_memory_flat() {
         verdict.lengths_ok,
         "a track is not as long as the media timeline"
     );
+    if let Some(ok) = verdict.frames_ok {
+        assert!(
+            ok,
+            "markers are missing from the video: a state of the screen was never recorded"
+        );
+    }
     if let Some(ok) = verdict.drift_ok {
         assert!(ok, "audio and video drifted by 100 ms or more");
     }

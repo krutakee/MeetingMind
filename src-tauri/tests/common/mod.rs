@@ -6,9 +6,12 @@ use std::ffi::c_void;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use sysinfo::{ProcessesToUpdate, System};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
@@ -292,4 +295,54 @@ impl TestWindow {
             );
         }
     }
+}
+
+// --- memory and CPU of this program and its FFmpeg children ---------------------------------------------------
+
+pub struct MemorySample {
+    pub minute: f64,
+    pub own_mb: f64,
+    pub children_mb: f64,
+    pub children: usize,
+    pub cpu_percent: f64,
+}
+
+/// Samples this program and its child processes (the FFmpeg encoders) every minute until `stop` is set.
+pub fn memory_thread(
+    stop: Arc<AtomicBool>,
+    interval: Duration,
+) -> std::thread::JoinHandle<Vec<MemorySample>> {
+    std::thread::spawn(move || {
+        let me = sysinfo::get_current_pid().expect("own process id");
+        let mut system = System::new();
+        let start = Instant::now();
+        let mut samples = Vec::new();
+        let mut next = Duration::ZERO;
+        while !stop.load(Ordering::SeqCst) {
+            if start.elapsed() >= next {
+                system.refresh_processes(ProcessesToUpdate::All, true);
+                let mb = |bytes: u64| bytes as f64 / (1024.0 * 1024.0);
+                let own = system.process(me);
+                let children: Vec<_> = system
+                    .processes()
+                    .values()
+                    .filter(|p| p.parent() == Some(me))
+                    .collect();
+                samples.push(MemorySample {
+                    minute: start.elapsed().as_secs_f64() / 60.0,
+                    own_mb: own.map_or(0.0, |p| mb(p.memory())),
+                    children_mb: children.iter().map(|p| mb(p.memory())).sum(),
+                    children: children.len(),
+                    cpu_percent: own.map_or(0.0, |p| f64::from(p.cpu_usage()))
+                        + children
+                            .iter()
+                            .map(|p| f64::from(p.cpu_usage()))
+                            .sum::<f64>(),
+                });
+                next += interval;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        samples
+    })
 }

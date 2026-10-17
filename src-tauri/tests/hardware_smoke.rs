@@ -8,13 +8,18 @@
 //! plays on the speakers for a few seconds. Recordings are made in a temporary folder, measured (length, size, the
 //! color of one pixel, the loudness of the system-audio track) and deleted. Their content is not otherwise looked at.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use meetingmind_lib::audio::windows::{CpalAudioSource, list_microphones, list_speakers};
 use meetingmind_lib::capture::windows::{WindowsScreenSource, list_monitors};
-use meetingmind_lib::recording::ffmpeg::{FfmpegInfo, H264Kind};
+use meetingmind_lib::recorder::Recorder;
+use meetingmind_lib::recording::ffmpeg::{self, FfmpegInfo, H264Kind};
 use meetingmind_lib::recording::metadata::{MeetingMetadata, Mode};
 use meetingmind_lib::recording::session::{Session, SessionConfig, SessionSources};
+use meetingmind_lib::recording::setup::RecordingSetup;
+use meetingmind_lib::storage::Database;
 use meetingmind_lib::system::{
     self, CapabilityId, CapabilityStatus, set_window_excluded_from_capture,
 };
@@ -314,4 +319,98 @@ fn an_audio_recording_followed_by_a_screen_recording() {
         0.8,
         "screen recording",
     );
+}
+
+/// Plan check "also checked": a one-minute screen, microphone and system-audio recording of every monitor of this
+/// machine, through the same `Recorder` the app uses (default setup: 1080p at 15 fps). Prints the encoder, the
+/// size of the video, the length of every file, the CPU use and the memory; nothing about the content is looked at.
+#[test]
+#[ignore = "needs every monitor of this machine, a microphone and speakers; one minute per monitor"]
+fn a_one_minute_recording_of_every_monitor() {
+    let monitors = list_monitors().unwrap();
+    assert!(!monitors.is_empty(), "this machine has a monitor");
+    let run = tempfile::tempdir().unwrap();
+    let database = Arc::new(Database::open(&run.path().join("test.db")).unwrap());
+    let recorder = Recorder::for_this_computer(database, run.path().join("meetings"));
+    let tools = recorder
+        .tools()
+        .expect("FFmpeg is installed (pnpm fetch:ffmpeg)");
+    println!(
+        "video encoder: {:?}; {}",
+        tools.h264,
+        tools
+            .ffmpeg
+            .version
+            .split(" Copyright")
+            .next()
+            .unwrap_or("")
+    );
+
+    for monitor in &monitors {
+        println!(
+            "\n--- {} ({}x{}{}) ---",
+            monitor.name,
+            monitor.width,
+            monitor.height,
+            if monitor.is_primary { ", main" } else { "" }
+        );
+        let stop = Arc::new(AtomicBool::new(false));
+        let sampler = memory_thread(stop.clone(), Duration::from_secs(10));
+        let setup = RecordingSetup {
+            title: monitor.name.clone(),
+            monitor_id: Some(monitor.id.clone()),
+            ..RecordingSetup::default()
+        };
+        recorder.start(&setup).expect("the recording starts");
+        std::thread::sleep(Duration::from_secs(60));
+        let finished = recorder.stop().expect("the recording is saved");
+        stop.store(true, Ordering::SeqCst);
+        let samples = sampler.join().unwrap();
+
+        let folder = std::path::Path::new(&finished.folder);
+        let metadata = MeetingMetadata::read(folder).unwrap();
+        let video = metadata.video.as_ref().unwrap();
+        let (width, height) = ffmpeg::output_size(monitor.width, monitor.height, Some(1080));
+        assert_eq!(
+            (video.width, video.height),
+            (width, height),
+            "the video has the size the 1080p setting gives"
+        );
+        assert_eq!(video.monitor, monitor.id, "the chosen monitor was recorded");
+        let media = metadata.duration_ms.unwrap() as f64 / 1000.0;
+        assert!(
+            (media - 60.0).abs() < 1.5,
+            "recorded {media:.2} s for one minute"
+        );
+        let info = ffmpeg::locate().and_then(|p| ffmpeg::probe(&p)).unwrap();
+        for file in ["recording.mp4", "microphone.flac", "system-audio.flac"] {
+            let len = ffmpeg::measure_duration(&info.path, &folder.join(file))
+                .unwrap()
+                .as_secs_f64();
+            println!("  {file}: {len:.3} s");
+            assert!(
+                (len - media).abs() < 0.25,
+                "{file} is as long as the media timeline"
+            );
+        }
+        let cpu = samples.iter().skip(1).map(|s| s.cpu_percent).sum::<f64>()
+            / samples.len().saturating_sub(1).max(1) as f64;
+        let peak = samples
+            .iter()
+            .map(|s| s.own_mb + s.children_mb)
+            .fold(0.0, f64::max);
+        println!(
+            "  {}x{} {}; media {media:.2} s; gaps {}, errors {}; CPU {cpu:.0} % of one core; memory peak {peak:.0} MB",
+            video.width,
+            video.height,
+            video.encoder,
+            metadata.gaps.len(),
+            metadata.errors.len()
+        );
+        assert!(
+            metadata.errors.is_empty(),
+            "no errors: {:?}",
+            metadata.errors
+        );
+    }
 }
