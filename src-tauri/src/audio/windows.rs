@@ -28,13 +28,7 @@ const REOPEN_INTERVAL: Duration = Duration::from_secs(2);
 /// Opening a device can take a second or more (M0 measured about 1.5 s on this machine's SoundWire codec).
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioDeviceInfo {
-    /// Stable identifier to pass back to `CpalAudioSource`.
-    pub id: String,
-    pub name: String,
-    pub is_default: bool,
-}
+pub use super::AudioDeviceInfo;
 
 fn device_error(e: impl std::fmt::Display) -> AudioError {
     AudioError::Device(e.to_string())

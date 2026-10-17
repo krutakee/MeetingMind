@@ -11,6 +11,7 @@ use crate::error::AppError;
 const KEY_STORAGE_FOLDER: &str = "storage_folder";
 const KEY_THEME: &str = "theme";
 const KEY_CONSENT_REMINDER: &str = "consent_reminder";
+const KEY_HOTKEYS: &str = "hotkeys";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,6 +22,26 @@ pub enum Theme {
     Dark,
 }
 
+/// Global keyboard shortcuts, as accelerator text such as `Ctrl+Shift+S`. Whether a combination can really be
+/// registered (it may belong to another program) is only known when registering, which reports a clear message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hotkeys {
+    /// Starts a recording, or stops the one that is running.
+    pub start_stop: String,
+    /// Pauses a recording, or resumes a paused one.
+    pub pause_resume: String,
+}
+
+impl Default for Hotkeys {
+    fn default() -> Self {
+        Self {
+            start_stop: "Ctrl+Shift+S".to_string(),
+            pause_resume: "Ctrl+Shift+P".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -29,6 +50,7 @@ pub struct Settings {
     pub theme: Theme,
     /// Show the participant-consent reminder before a recording starts (SPEC Section 5).
     pub consent_reminder: bool,
+    pub hotkeys: Hotkeys,
 }
 
 impl Default for Settings {
@@ -37,6 +59,7 @@ impl Default for Settings {
             storage_folder: None,
             theme: Theme::default(),
             consent_reminder: true,
+            hotkeys: Hotkeys::default(),
         }
     }
 }
@@ -50,6 +73,7 @@ pub fn load(conn: &Connection) -> Result<Settings, AppError> {
         theme: read_key(conn, KEY_THEME)?.unwrap_or(defaults.theme),
         consent_reminder: read_key(conn, KEY_CONSENT_REMINDER)?
             .unwrap_or(defaults.consent_reminder),
+        hotkeys: read_key(conn, KEY_HOTKEYS)?.unwrap_or(defaults.hotkeys),
     })
 }
 
@@ -62,6 +86,7 @@ pub fn save(conn: &mut Connection, settings: &Settings) -> Result<Settings, AppE
     write_key(&tx, KEY_STORAGE_FOLDER, &valid.storage_folder)?;
     write_key(&tx, KEY_THEME, &valid.theme)?;
     write_key(&tx, KEY_CONSENT_REMINDER, &valid.consent_reminder)?;
+    write_key(&tx, KEY_HOTKEYS, &valid.hotkeys)?;
     tx.commit()?;
 
     Ok(valid)
@@ -85,6 +110,34 @@ fn validate(settings: &Settings) -> Result<Settings, AppError> {
             return Err(reject("the folder path must be absolute"));
         }
         valid.storage_folder = Some(folder.to_string());
+    }
+    let keys = [
+        ("hotkeys.startStop", &settings.hotkeys.start_stop),
+        ("hotkeys.pauseResume", &settings.hotkeys.pause_resume),
+    ];
+    for (field, keys) in keys {
+        let reject = |reason: &str| AppError::InvalidSetting {
+            field,
+            reason: reason.to_string(),
+        };
+        if keys.trim().is_empty() {
+            return Err(reject("the shortcut is empty"));
+        }
+        if keys.chars().any(char::is_control) {
+            return Err(reject("the shortcut contains an invalid character"));
+        }
+    }
+    valid.hotkeys.start_stop = settings.hotkeys.start_stop.trim().to_string();
+    valid.hotkeys.pause_resume = settings.hotkeys.pause_resume.trim().to_string();
+    if valid
+        .hotkeys
+        .start_stop
+        .eq_ignore_ascii_case(&valid.hotkeys.pause_resume)
+    {
+        return Err(AppError::InvalidSetting {
+            field: "hotkeys.pauseResume",
+            reason: "start/stop and pause/resume cannot use the same shortcut".to_string(),
+        });
     }
     Ok(valid)
 }
@@ -158,6 +211,10 @@ mod tests {
             storage_folder: Some(some_absolute_folder()),
             theme: Theme::Dark,
             consent_reminder: false,
+            hotkeys: Hotkeys {
+                start_stop: "Ctrl+Alt+R".into(),
+                pause_resume: "Ctrl+Alt+P".into(),
+            },
         };
 
         let stored = save(&mut conn, &wanted).unwrap();
@@ -174,7 +231,7 @@ mod tests {
             &Settings {
                 storage_folder: Some(some_absolute_folder()),
                 theme: Theme::Light,
-                consent_reminder: true,
+                ..Settings::default()
             },
         )
         .unwrap();
@@ -184,7 +241,7 @@ mod tests {
             &Settings {
                 storage_folder: None,
                 theme: Theme::Dark,
-                consent_reminder: true,
+                ..Settings::default()
             },
         )
         .unwrap();
@@ -195,7 +252,7 @@ mod tests {
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(rows, 3, "one row per setting, none duplicated");
+        assert_eq!(rows, 4, "one row per setting, none duplicated");
     }
 
     #[test]
@@ -229,6 +286,7 @@ mod tests {
                 storage_folder: Some(bad.to_string()),
                 theme: Theme::Dark,
                 consent_reminder: false,
+                hotkeys: Hotkeys::default(),
             };
             let error = save(&mut conn, &attempt).unwrap_err();
             assert!(
@@ -271,6 +329,7 @@ mod tests {
             storage_folder: None,
             theme: Theme::Dark,
             consent_reminder: true,
+            hotkeys: Hotkeys::default(),
         })
         .unwrap();
 
@@ -279,8 +338,69 @@ mod tests {
             serde_json::json!({
                 "storageFolder": null,
                 "theme": "dark",
-                "consentReminder": true
+                "consentReminder": true,
+                "hotkeys": { "startStop": "Ctrl+Shift+S", "pauseResume": "Ctrl+Shift+P" }
             })
         );
+    }
+
+    #[test]
+    fn the_default_shortcuts_are_ctrl_shift_s_and_p() {
+        let hotkeys = Settings::default().hotkeys;
+
+        assert_eq!(hotkeys.start_stop, "Ctrl+Shift+S");
+        assert_eq!(hotkeys.pause_resume, "Ctrl+Shift+P");
+    }
+
+    #[test]
+    fn shortcuts_are_trimmed_and_bad_ones_are_refused_with_the_field_named() {
+        let mut conn = migrated();
+        let trimmed = save(
+            &mut conn,
+            &Settings {
+                hotkeys: Hotkeys {
+                    start_stop: "  Ctrl+Alt+R ".into(),
+                    pause_resume: "Ctrl+Alt+P".into(),
+                },
+                ..Settings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(trimmed.hotkeys.start_stop, "Ctrl+Alt+R");
+
+        let mut refused = |start_stop: &str, pause_resume: &str| {
+            save(
+                &mut conn,
+                &Settings {
+                    hotkeys: Hotkeys {
+                        start_stop: start_stop.into(),
+                        pause_resume: pause_resume.into(),
+                    },
+                    ..Settings::default()
+                },
+            )
+            .unwrap_err()
+        };
+        assert!(matches!(
+            refused("", "Ctrl+Alt+P"),
+            AppError::InvalidSetting {
+                field: "hotkeys.startStop",
+                ..
+            }
+        ));
+        assert!(matches!(
+            refused("Ctrl+Alt+R", "ctrl+alt+r"),
+            AppError::InvalidSetting {
+                field: "hotkeys.pauseResume",
+                ..
+            }
+        ));
+        assert!(matches!(
+            refused("Ctrl+Alt+R", "Ctrl+\u{7}"),
+            AppError::InvalidSetting {
+                field: "hotkeys.pauseResume",
+                ..
+            }
+        ));
     }
 }

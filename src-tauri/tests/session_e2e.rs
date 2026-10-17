@@ -294,6 +294,59 @@ fn paused_time_is_cut_out_of_every_track_and_listed_in_the_metadata() {
     );
 }
 
+/// The size of the first video stream, read from what FFmpeg prints about the file.
+fn video_size(info: &FfmpegInfo, file: &Path) -> (u32, u32) {
+    let output = std::process::Command::new(&info.path)
+        .args(["-hide_banner", "-i"])
+        .arg(file)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stderr).into_owned();
+    let line = text
+        .lines()
+        .find(|l| l.contains("Video:"))
+        .unwrap_or_else(|| panic!("no video stream in {}: {text}", file.display()));
+    line.split_whitespace()
+        .map(|token| token.trim_end_matches(','))
+        .filter(|token| !token.starts_with("0x"))
+        .find_map(|token| {
+            let (w, h) = token.split_once('x')?;
+            Some((w.parse().ok()?, h.parse().ok()?))
+        })
+        .unwrap_or_else(|| panic!("no size in: {line}"))
+}
+
+#[test]
+fn a_recording_scaled_down_by_the_quality_setting_has_the_smaller_size_everywhere() {
+    let Some((info, kind)) = ffmpeg_or_skip("scaled") else {
+        return;
+    };
+    let rig = rig(info.clone(), kind);
+    let mut config = config(&rig, "Scaled", Mode::ScreenAudio);
+    config.max_output_height = Some(180);
+    let sources = SessionSources::default()
+        .with_screen(SyntheticScreen::new(640, 360))
+        .with_microphone(SyntheticAudio::new("Synthetic microphone", 48_000, 2));
+
+    let session = Session::start(config, sources, rig.deps).unwrap();
+    let folder = session.folder().to_path_buf();
+    std::thread::sleep(Duration::from_millis(2500));
+    let outcome = session.stop().unwrap();
+
+    assert_eq!(
+        video_size(&info, &outcome.file),
+        (320, 180),
+        "{}",
+        recorded_problems(&folder)
+    );
+    let video = MeetingMetadata::read(&folder).unwrap().video.unwrap();
+    assert_eq!(
+        (video.width, video.height),
+        (320, 180),
+        "meeting.json describes the file, not the monitor"
+    );
+}
+
 #[test]
 fn an_audio_only_recording_produces_an_m4a_and_no_video_file() {
     let Some((info, kind)) = ffmpeg_or_skip("audio only") else {

@@ -25,7 +25,8 @@ pub fn send_event(events: &SyncSender<ScreenEvent>, event: ScreenEvent) {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MonitorInfo {
     /// Stable identifier (the device name on Windows, for example `\\.\DISPLAY2`). Never an index.
     pub id: String,
@@ -34,6 +35,38 @@ pub struct MonitorInfo {
     pub width: u32,
     pub height: u32,
     pub is_primary: bool,
+}
+
+#[cfg(not(windows))]
+fn unsupported<T>() -> Result<T, CaptureError> {
+    Err(CaptureError::Device(
+        "screen capture is not available on this platform yet".into(),
+    ))
+}
+
+/// All monitors, with their physical pixel sizes.
+pub fn list_monitors() -> Result<Vec<MonitorInfo>, CaptureError> {
+    #[cfg(windows)]
+    return windows::list_monitors();
+    #[cfg(not(windows))]
+    return unsupported();
+}
+
+/// A screen source for one monitor (`None` is the primary one), delivering at most `max_fps` frames per second.
+pub fn open_screen(
+    monitor_id: Option<&str>,
+    max_fps: u32,
+) -> Result<Box<dyn ScreenSource>, CaptureError> {
+    #[cfg(windows)]
+    return Ok(Box::new(match monitor_id {
+        Some(id) => windows::WindowsScreenSource::new(id, max_fps)?,
+        None => windows::WindowsScreenSource::primary(max_fps)?,
+    }));
+    #[cfg(not(windows))]
+    {
+        let _ = (monitor_id, max_fps);
+        return unsupported();
+    }
 }
 
 /// One captured frame: BGRA, tightly packed (`width * 4` bytes per row). Cloning shares the pixels.

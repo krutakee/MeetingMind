@@ -331,3 +331,77 @@ impl AudioSource for SyntheticAudio {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+
+/// TEST DOUBLE: a computer with one synthetic monitor and synthetic audio devices, for the recorder tests.
+pub struct SyntheticDevices {
+    pub monitor: MonitorInfo,
+    pub microphone_name: String,
+    /// When set, opening the microphone fails with this message (an unplugged device).
+    pub microphone_problem: Option<String>,
+    pub system_audio_problem: Option<String>,
+}
+
+impl SyntheticDevices {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
+            monitor: SyntheticScreen::new(width, height).monitor(),
+            microphone_name: "Synthetic microphone".into(),
+            microphone_problem: None,
+            system_audio_problem: None,
+        }
+    }
+}
+
+impl crate::recorder::Devices for SyntheticDevices {
+    fn monitors(&self) -> Result<Vec<MonitorInfo>, CaptureError> {
+        Ok(vec![self.monitor.clone()])
+    }
+
+    fn screen(
+        &self,
+        monitor_id: Option<&str>,
+        _max_fps: u32,
+    ) -> Result<Box<dyn ScreenSource>, CaptureError> {
+        match monitor_id {
+            Some(id) if id != self.monitor.id => Err(CaptureError::Device(format!(
+                "the monitor {id} was not found"
+            ))),
+            _ => Ok(Box::new(SyntheticScreen::new(
+                self.monitor.width,
+                self.monitor.height,
+            ))),
+        }
+    }
+
+    fn microphones(&self) -> Result<Vec<crate::audio::AudioDeviceInfo>, AudioError> {
+        Ok(vec![crate::audio::AudioDeviceInfo {
+            id: "synthetic-microphone".into(),
+            name: self.microphone_name.clone(),
+            is_default: true,
+        }])
+    }
+
+    fn microphone(&self, _device_id: Option<&str>) -> Result<Box<dyn AudioSource>, AudioError> {
+        match &self.microphone_problem {
+            Some(problem) => Err(AudioError::Device(problem.clone())),
+            None => Ok(Box::new(SyntheticAudio::new(
+                &self.microphone_name,
+                48_000,
+                2,
+            ))),
+        }
+    }
+
+    fn system_audio(&self) -> Result<Box<dyn AudioSource>, AudioError> {
+        match &self.system_audio_problem {
+            Some(problem) => Err(AudioError::Device(problem.clone())),
+            None => Ok(Box::new(SyntheticAudio::new(
+                "Synthetic speakers",
+                44_100,
+                2,
+            ))),
+        }
+    }
+}

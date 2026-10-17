@@ -10,6 +10,7 @@ pub mod metadata;
 pub mod pacer;
 pub mod recovery;
 pub mod session;
+pub mod setup;
 pub mod state;
 pub mod timefmt;
 

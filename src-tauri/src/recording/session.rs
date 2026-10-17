@@ -91,6 +91,8 @@ pub struct SessionConfig {
     pub folder_time: LocalDateTime,
     pub fps: u32,
     pub video_bitrate_bps: u32,
+    /// The video is scaled down to at most this many rows (never up). `None` records at the monitor's own size.
+    pub max_output_height: Option<u32>,
     pub app_version: String,
     pub disk_thresholds: DiskThresholds,
     pub disk_check_interval: Duration,
@@ -107,6 +109,7 @@ impl SessionConfig {
             folder_time,
             fps: 15,
             video_bitrate_bps: 2_500_000,
+            max_output_height: None,
             app_version: env!("CARGO_PKG_VERSION").to_string(),
             disk_thresholds: DiskThresholds::default(),
             disk_check_interval: Duration::from_secs(10),
@@ -135,6 +138,22 @@ impl SessionSources {
 
     pub fn with_system_audio(mut self, source: impl AudioSource + 'static) -> Self {
         self.system_audio = Some(Box::new(source));
+        self
+    }
+
+    /// Like `with_screen`, for a source that is already boxed (the recorder gets its sources from `Devices`).
+    pub fn with_boxed_screen(mut self, source: Box<dyn ScreenSource>) -> Self {
+        self.screen = Some(source);
+        self
+    }
+
+    pub fn with_boxed_microphone(mut self, source: Box<dyn AudioSource>) -> Self {
+        self.microphone = Some(source);
+        self
+    }
+
+    pub fn with_boxed_system_audio(mut self, source: Box<dyn AudioSource>) -> Self {
+        self.system_audio = Some(source);
         self
     }
 }
@@ -1006,9 +1025,13 @@ impl Session {
             return None;
         }
         let output = self.shared.folder.join(names::VIDEO_PART);
+        let (output_width, output_height) =
+            ffmpeg::output_size(monitor.width, monitor.height, self.config.max_output_height);
         let params = VideoParams {
             width: monitor.width,
             height: monitor.height,
+            output_width,
+            output_height,
             fps: self.config.fps,
             bitrate_bps: self.config.video_bitrate_bps,
         };
@@ -1102,10 +1125,15 @@ impl Session {
         let shared = self.shared.clone();
         match prepared {
             Prepared::Video(v) => {
+                let (output_width, output_height) = ffmpeg::output_size(
+                    v.monitor.width,
+                    v.monitor.height,
+                    self.config.max_output_height,
+                );
                 self.video_info = Some(VideoInfo {
                     monitor: v.monitor.id.clone(),
-                    width: v.monitor.width,
-                    height: v.monitor.height,
+                    width: output_width,
+                    height: output_height,
                     fps: self.config.fps,
                     encoder: self.deps.video_encoder.label().to_string(),
                 });

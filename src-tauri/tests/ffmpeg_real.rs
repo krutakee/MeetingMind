@@ -86,6 +86,8 @@ fn params() -> VideoParams {
     VideoParams {
         width: W,
         height: H,
+        output_width: W,
+        output_height: H,
         fps: FPS,
         bitrate_bps: 1_500_000,
     }

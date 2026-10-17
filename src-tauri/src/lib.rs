@@ -11,6 +11,7 @@ pub mod capture;
 mod commands;
 pub mod error;
 pub mod logging;
+pub mod recorder;
 pub mod recording;
 pub mod storage;
 pub mod system;

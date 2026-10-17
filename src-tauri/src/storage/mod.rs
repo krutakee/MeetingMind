@@ -2,6 +2,7 @@
 
 pub mod meetings;
 pub mod migrations;
+pub mod presets;
 pub mod settings;
 
 use std::path::Path;
@@ -91,6 +92,7 @@ mod tests {
             storage_folder: None,
             theme: Theme::Dark,
             consent_reminder: false,
+            hotkeys: settings::Hotkeys::default(),
         };
 
         {

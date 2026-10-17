@@ -223,10 +223,27 @@ pub fn select_h264(ffmpeg: &FfmpegInfo) -> Result<H264Kind, FfmpegError> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VideoParams {
+    /// Size of the frames sent to the encoder (the monitor, in physical pixels).
     pub width: u32,
     pub height: u32,
+    /// Size of the video in the file. Smaller than the frames when the recording is scaled down (see `output_size`).
+    pub output_width: u32,
+    pub output_height: u32,
     pub fps: u32,
     pub bitrate_bps: u32,
+}
+
+/// The size a monitor of `width` x `height` is recorded at: the same size, or scaled down (never up) to at most
+/// `max_height` rows with the aspect ratio kept. Both numbers are even, which H.264 with 4:2:0 colour needs.
+pub fn output_size(width: u32, height: u32, max_height: Option<u32>) -> (u32, u32) {
+    let even = |value: u32| value.max(2) & !1;
+    match max_height {
+        Some(max) if max >= 2 && height > max => {
+            let scaled_width = u64::from(width) * u64::from(max) / u64::from(height);
+            (even(scaled_width as u32), even(max))
+        }
+        _ => (even(width), even(height)),
+    }
 }
 
 fn os(items: &[&str]) -> Vec<OsString> {
@@ -253,7 +270,18 @@ pub fn video_args(kind: H264Kind, params: &VideoParams, output: &Path) -> Vec<Os
     args.extend(os(&["-framerate"]));
     args.push(params.fps.to_string().into());
     // NV12 is what the hardware encoder accepts (M0: other input formats fail to negotiate).
-    args.extend(os(&["-i", "pipe:0", "-vf", "format=nv12"]));
+    args.extend(os(&["-i", "pipe:0", "-vf"]));
+    if (params.output_width, params.output_height) == (params.width, params.height) {
+        args.push("format=nv12".into());
+    } else {
+        args.push(
+            format!(
+                "scale={}:{},format=nv12",
+                params.output_width, params.output_height
+            )
+            .into(),
+        );
+    }
     args.extend(kind.codec_args().into_iter().map(OsString::from));
     args.extend(os(&["-b:v"]));
     args.push(params.bitrate_bps.to_string().into());
@@ -797,9 +825,57 @@ mod tests {
         VideoParams {
             width: 1920,
             height: 1080,
+            output_width: 1920,
+            output_height: 1080,
             fps: 15,
             bitrate_bps: 2_500_000,
         }
+    }
+
+    #[test]
+    fn a_tall_monitor_is_scaled_down_keeping_its_aspect_ratio() {
+        assert_eq!(output_size(1920, 1200, Some(1080)), (1728, 1080));
+        assert_eq!(output_size(3840, 2160, Some(1080)), (1920, 1080));
+        assert_eq!(output_size(2560, 1440, Some(720)), (1280, 720));
+    }
+
+    #[test]
+    fn a_monitor_is_never_scaled_up_and_sizes_are_always_even() {
+        assert_eq!(output_size(1280, 720, Some(1080)), (1280, 720));
+        assert_eq!(output_size(1366, 768, None), (1366, 768));
+        assert_eq!(output_size(1365, 767, None), (1364, 766));
+        // 1000 x 600 scaled to 500 rows is 833 wide, which is odd and becomes 832.
+        assert_eq!(output_size(1000, 600, Some(500)), (832, 500));
+    }
+
+    #[test]
+    fn the_video_is_scaled_only_when_its_size_in_the_file_differs() {
+        let same = text(&video_args(
+            H264Kind::HardwareMf,
+            &params(),
+            Path::new("v.mp4"),
+        ));
+        assert!(same.contains(&"format=nv12".to_string()), "{same:?}");
+        assert!(!same.iter().any(|a| a.starts_with("scale=")), "{same:?}");
+
+        let smaller = VideoParams {
+            width: 3840,
+            height: 2160,
+            output_width: 1920,
+            output_height: 1080,
+            ..params()
+        };
+        let scaled = text(&video_args(
+            H264Kind::HardwareMf,
+            &smaller,
+            Path::new("v.mp4"),
+        ));
+        assert!(
+            scaled.contains(&"scale=1920:1080,format=nv12".to_string()),
+            "{scaled:?}"
+        );
+        // The input is still described by the frames the encoder receives, not by the file.
+        assert!(scaled.contains(&"3840x2160".to_string()), "{scaled:?}");
     }
 
     #[test]

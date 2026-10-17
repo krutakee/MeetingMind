@@ -25,6 +25,50 @@ pub fn send_event(events: &SyncSender<AudioEvent>, event: AudioEvent) {
     }
 }
 
+/// An audio device the user can pick.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDeviceInfo {
+    /// Stable identifier to pass back to `open_microphone`.
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[cfg(not(windows))]
+fn unsupported<T>() -> Result<T, AudioError> {
+    Err(AudioError::Device(
+        "audio capture is not available on this platform yet".into(),
+    ))
+}
+
+/// Microphones and other input devices, the default one flagged.
+pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
+    #[cfg(windows)]
+    return windows::list_microphones();
+    #[cfg(not(windows))]
+    return unsupported();
+}
+
+/// A microphone source. `None` is the default microphone, which is followed if the default changes.
+pub fn open_microphone(device_id: Option<&str>) -> Result<Box<dyn AudioSource>, AudioError> {
+    #[cfg(windows)]
+    return Ok(Box::new(windows::CpalAudioSource::microphone(device_id)?));
+    #[cfg(not(windows))]
+    {
+        let _ = device_id;
+        return unsupported();
+    }
+}
+
+/// A source for everything the computer plays on its default output device.
+pub fn open_system_audio() -> Result<Box<dyn AudioSource>, AudioError> {
+    #[cfg(windows)]
+    return Ok(Box::new(windows::CpalAudioSource::system_audio(None)?));
+    #[cfg(not(windows))]
+    return unsupported();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioFormat {
     pub sample_rate: u32,
