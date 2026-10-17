@@ -205,6 +205,15 @@ pub fn set_window_excluded_from_capture(
         .map_err(|e| SystemError::Os(e.to_string()))
 }
 
+/// The native handle of a Tauri window is an `HWND`.
+pub fn set_app_window_excluded_from_capture(
+    window: &tauri::WebviewWindow,
+    excluded: bool,
+) -> Result<(), SystemError> {
+    let handle = window.hwnd().map_err(|e| SystemError::Os(e.to_string()))?;
+    set_window_excluded_from_capture(handle.0, excluded)
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Session lock events
 

@@ -14,6 +14,7 @@ import {
   type Theme,
 } from '@/lib/ipc'
 import { THEME_LABELS } from '@/lib/theme'
+import { ShortcutField } from '@/screens/shortcut-field'
 import { useAppState } from '@/state/app-state'
 
 const CAPABILITY_LABELS: Record<CapabilityId, string> = {
@@ -115,8 +116,8 @@ function SettingsForm({ settings }: { settings: Settings }) {
           {settings.storageFolder ?? info.defaultStorageFolder}
         </p>
         <p className="text-sm text-muted-foreground">
-          {usingDefaultFolder ? 'This is the default folder.' : 'This is a folder you chose.'} MeetingMind does not
-          create it until recording is available.
+          {usingDefaultFolder ? 'This is the default folder.' : 'This is a folder you chose.'} MeetingMind creates
+          it when the first recording is saved.
         </p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void chooseFolder()}>
@@ -142,10 +143,27 @@ function SettingsForm({ settings }: { settings: Settings }) {
           <div>
             <Label htmlFor="consent-reminder">Remind me to get participants’ consent before recording</Label>
             <p className="mt-1 text-sm text-muted-foreground">
-              Shown before each recording starts. Recording is not available yet, so this has no effect for now.
+              Shown before each recording starts, also when you start it from the tray icon or a shortcut.
             </p>
           </div>
         </div>
+      </Section>
+
+      <Section title="Shortcuts">
+        <p className="text-sm text-muted-foreground">
+          These work in any program, also while MeetingMind is in the background. Choose a button, then press the new
+          keys. If another program already uses the combination, you are told and nothing changes.
+        </p>
+        <ShortcutField
+          label="Start or stop recording"
+          value={settings.hotkeys.startStop}
+          onChange={(startStop) => update({ hotkeys: { ...settings.hotkeys, startStop } })}
+        />
+        <ShortcutField
+          label="Pause or resume"
+          value={settings.hotkeys.pauseResume}
+          onChange={(pauseResume) => update({ hotkeys: { ...settings.hotkeys, pauseResume } })}
+        />
       </Section>
 
       <Section title="System capabilities">

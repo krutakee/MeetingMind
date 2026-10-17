@@ -11,6 +11,10 @@ use tracing::warn;
 use crate::error::AppError;
 use crate::recording::setup::RecordingSetup;
 
+/// Settings key holding the setup of the latest recording, so a recording started from the tray or a shortcut can
+/// repeat it.
+const KEY_LAST_SETUP: &str = "last_recording_setup";
+
 /// The longest preset name accepted (characters).
 pub const MAX_NAME_CHARS: usize = 60;
 
@@ -85,6 +89,18 @@ pub fn save(conn: &Connection, name: &str, setup: &RecordingSetup) -> Result<Pre
     })
 }
 
+/// The setup the latest recording was started with, if there was one and it can still be read.
+pub fn last_used(conn: &Connection) -> Result<Option<RecordingSetup>, AppError> {
+    crate::storage::settings::read_key(conn, KEY_LAST_SETUP)
+}
+
+/// Remembers the setup of the recording that is starting. The title belongs to one meeting and is not kept.
+pub fn save_last_used(conn: &Connection, setup: &RecordingSetup) -> Result<(), AppError> {
+    let mut stored = setup.clone();
+    stored.title = String::new();
+    crate::storage::settings::write_key(conn, KEY_LAST_SETUP, &stored)
+}
+
 pub fn delete(conn: &Connection, id: i64) -> Result<(), AppError> {
     conn.execute("DELETE FROM recording_presets WHERE id = ?1", [id])?;
     Ok(())
@@ -157,6 +173,20 @@ mod tests {
         assert!(save(&conn, &"x".repeat(MAX_NAME_CHARS + 1), &setup(15)).is_err());
 
         assert!(list(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_last_used_setup_is_remembered_without_its_title() {
+        let conn = db();
+        assert_eq!(last_used(&conn).unwrap(), None);
+        let mut used = setup(10);
+        used.title = "Board meeting".into();
+
+        save_last_used(&conn, &used).unwrap();
+
+        let remembered = last_used(&conn).unwrap().unwrap();
+        assert_eq!(remembered.fps, 10);
+        assert_eq!(remembered.title, "");
     }
 
     #[test]

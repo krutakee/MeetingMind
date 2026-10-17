@@ -8,7 +8,7 @@ Windows and macOS; JavaScript: `pnpm licenses`). Licenses written as "A OR B" le
 below counts a package as permissive when at least one permitted choice is. License texts were not read and this is
 not legal advice. Get a legal review before distributing MeetingMind commercially.
 
-**Summary.** 306 Rust crates and 274 JavaScript packages are in the dependency trees.
+**Summary.** 316 Rust crates and 274 JavaScript packages are in the dependency trees.
 5 Rust crate(s) and 5 JavaScript package(s) need review (listed below); all others declare permissive licenses.
 
 ## Direct dependencies
@@ -27,6 +27,9 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 | sysinfo | 0.39.6 | runtime | MIT | RAM and CPU detection |
 | tauri | 2.12.4 | runtime | Apache-2.0 OR MIT | Desktop app framework (window, webview, IPC) |
 | tauri-plugin-dialog | 2.8.3 | runtime | Apache-2.0 OR MIT | Native folder picker |
+| tauri-plugin-global-shortcut | 2.4.1 | runtime | Apache-2.0 OR MIT | Global keyboard shortcuts: start/stop and pause/resume |
+| tauri-plugin-opener | 2.7.2 | runtime | Apache-2.0 OR MIT | Opens a meeting folder in the file manager |
+| tauri-plugin-single-instance | 2.5.4 | runtime | Apache-2.0 OR MIT | Keeps a second copy of the app from starting |
 | thiserror | 2.0.21 | runtime | MIT OR Apache-2.0 | Error types |
 | tracing | 0.1.44 | runtime | MIT | Structured logging API |
 | tracing-appender | 0.2.5 | runtime | MIT | Rotating log files |
@@ -74,13 +77,13 @@ not legal advice. Get a legal review before distributing MeetingMind commerciall
 
 ## Whole dependency trees
 
-### Rust: licenses declared by all 306 crates (Windows + macOS)
+### Rust: licenses declared by all 316 crates (Windows + macOS)
 
 | Declared license | Crates |
 | --- | --- |
-| MIT OR Apache-2.0 | 144 |
-| MIT | 60 |
-| Apache-2.0 OR MIT | 28 |
+| MIT OR Apache-2.0 | 148 |
+| MIT | 62 |
+| Apache-2.0 OR MIT | 32 |
 | Unicode-3.0 | 18 |
 | MIT/Apache-2.0 | 13 |
 | Zlib OR Apache-2.0 OR MIT | 10 |

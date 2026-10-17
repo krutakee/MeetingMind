@@ -381,3 +381,72 @@ fn errors_reach_the_frontend_as_kind_and_message() {
         serde_json::json!({ "kind": "busy", "message": "a recording is already running" })
     );
 }
+
+#[test]
+fn cancelling_deletes_the_recording_and_leaves_no_banner() {
+    let Some(tools) = tools_or_skip("cancel") else {
+        return;
+    };
+    let rig = rig(tools);
+    rig.recorder.start(&setup("Oops")).unwrap();
+    std::thread::sleep(Duration::from_millis(1000));
+    assert_eq!(meeting_folders(&rig.storage).len(), 1);
+
+    rig.recorder.cancel().unwrap();
+
+    assert_eq!(rig.recorder.phase(), Phase::Idle);
+    assert!(
+        meeting_folders(&rig.storage).is_empty(),
+        "the folder is gone"
+    );
+    let status = rig.recorder.status();
+    assert_eq!(status.finished, None);
+    assert_eq!(status.error, None);
+    assert!(matches!(
+        rig.recorder.cancel(),
+        Err(RecorderError::NotRecording)
+    ));
+}
+
+#[test]
+fn a_notice_from_the_app_shows_with_the_recordings_own_warnings_and_is_gone_afterwards() {
+    use meetingmind_lib::recording::session::WarningKind;
+
+    let Some(tools) = tools_or_skip("notice") else {
+        return;
+    };
+    let rig = rig(tools);
+    rig.recorder.add_notice(
+        WarningKind::OwnWindowVisible,
+        "ignored: nothing is recording",
+    );
+    rig.recorder.start(&setup("Notice")).unwrap();
+
+    rig.recorder.add_notice(
+        WarningKind::OwnWindowVisible,
+        "MeetingMind's windows may appear in the recording.",
+    );
+    let status = rig.recorder.status();
+
+    assert!(
+        status
+            .warnings
+            .iter()
+            .any(|w| w.kind == WarningKind::OwnWindowVisible && w.message.contains("may appear")),
+        "{:?}",
+        status.warnings
+    );
+    assert!(
+        status.warnings.iter().all(|w| w.id != 0),
+        "ids are never reused"
+    );
+    rig.recorder.stop().unwrap();
+    assert!(rig.recorder.status().warnings.is_empty());
+
+    rig.recorder.start(&setup("Next")).unwrap();
+    assert!(
+        rig.recorder.status().warnings.is_empty(),
+        "a new recording starts without the old notices"
+    );
+    rig.recorder.stop().unwrap();
+}

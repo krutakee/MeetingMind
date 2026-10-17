@@ -77,8 +77,8 @@ pub trait CapabilityProbe: Send + Sync {
     fn probe(&self) -> CapabilityReport;
 }
 
-/// Replaces the capability with the same id (used by platform probes to fill in what they can really detect).
-#[cfg(windows)]
+/// Replaces the capability with the same id (used by platform probes, and by the command layer for the video
+/// encoders, to fill in what was really detected).
 pub(crate) fn replace_capability(report: &mut CapabilityReport, capability: Capability) {
     match report
         .capabilities
@@ -142,6 +142,15 @@ pub fn set_window_excluded_from_capture(
     excluded: bool,
 ) -> Result<(), SystemError> {
     platform::set_window_excluded_from_capture(window, excluded)
+}
+
+/// Hides (or shows again) one of the app's own windows in screen recordings, like `set_window_excluded_from_capture`
+/// but for a Tauri window.
+pub fn set_app_window_excluded_from_capture(
+    window: &tauri::WebviewWindow,
+    excluded: bool,
+) -> Result<(), SystemError> {
+    platform::set_app_window_excluded_from_capture(window, excluded)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

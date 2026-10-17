@@ -5,6 +5,7 @@ import { RecordScreen } from '@/screens/record-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
 import { StartupFailedScreen } from '@/screens/startup-screens'
 import { AppProvider, useAppState } from '@/state/app-state'
+import { RecorderStatusProvider } from '@/state/recorder-status'
 
 /** The screens. Needs a router and <AppProvider> around it (App.tsx wires them; tests use their own router). */
 export function AppRoutes() {
@@ -19,15 +20,17 @@ export function AppRoutes() {
     )
   }
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Navigate to="/record" replace />} />
-        <Route path="record" element={<RecordScreen />} />
-        <Route path="library" element={<LibraryScreen />} />
-        <Route path="settings" element={<SettingsScreen />} />
-        <Route path="*" element={<Navigate to="/record" replace />} />
-      </Route>
-    </Routes>
+    <RecorderStatusProvider>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Navigate to="/record" replace />} />
+          <Route path="record" element={<RecordScreen />} />
+          <Route path="library" element={<LibraryScreen />} />
+          <Route path="settings" element={<SettingsScreen />} />
+          <Route path="*" element={<Navigate to="/record" replace />} />
+        </Route>
+      </Routes>
+    </RecorderStatusProvider>
   )
 }
 

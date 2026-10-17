@@ -66,6 +66,17 @@ impl Database {
     pub fn save_settings(&self, new: &Settings) -> Result<Settings, AppError> {
         self.with_conn(|conn| settings::save(conn, new))
     }
+
+    pub fn last_setup(&self) -> Result<Option<crate::recording::setup::RecordingSetup>, AppError> {
+        self.with_conn(|conn| presets::last_used(conn))
+    }
+
+    pub fn save_last_setup(
+        &self,
+        setup: &crate::recording::setup::RecordingSetup,
+    ) -> Result<(), AppError> {
+        self.with_conn(|conn| presets::save_last_used(conn, setup))
+    }
 }
 
 #[cfg(test)]

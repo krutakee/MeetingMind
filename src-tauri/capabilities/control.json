@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "control",
+  "description": "Permissions for the small control window shown while recording: it listens to the recording status and can be dragged.",
+  "windows": ["control"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

@@ -37,19 +37,9 @@ pub struct MonitorInfo {
     pub is_primary: bool,
 }
 
-#[cfg(not(windows))]
-fn unsupported<T>() -> Result<T, CaptureError> {
-    Err(CaptureError::Device(
-        "screen capture is not available on this platform yet".into(),
-    ))
-}
-
 /// All monitors, with their physical pixel sizes.
 pub fn list_monitors() -> Result<Vec<MonitorInfo>, CaptureError> {
-    #[cfg(windows)]
-    return windows::list_monitors();
-    #[cfg(not(windows))]
-    return unsupported();
+    platform::list_monitors()
 }
 
 /// A screen source for one monitor (`None` is the primary one), delivering at most `max_fps` frames per second.
@@ -57,15 +47,48 @@ pub fn open_screen(
     monitor_id: Option<&str>,
     max_fps: u32,
 ) -> Result<Box<dyn ScreenSource>, CaptureError> {
-    #[cfg(windows)]
-    return Ok(Box::new(match monitor_id {
-        Some(id) => windows::WindowsScreenSource::new(id, max_fps)?,
-        None => windows::WindowsScreenSource::primary(max_fps)?,
-    }));
-    #[cfg(not(windows))]
-    {
-        let _ = (monitor_id, max_fps);
-        return unsupported();
+    platform::open_screen(monitor_id, max_fps)
+}
+
+#[cfg(windows)]
+mod platform {
+    use super::{CaptureError, MonitorInfo, ScreenSource, windows};
+
+    pub fn list_monitors() -> Result<Vec<MonitorInfo>, CaptureError> {
+        windows::list_monitors()
+    }
+
+    pub fn open_screen(
+        monitor_id: Option<&str>,
+        max_fps: u32,
+    ) -> Result<Box<dyn ScreenSource>, CaptureError> {
+        Ok(Box::new(match monitor_id {
+            Some(id) => windows::WindowsScreenSource::new(id, max_fps)?,
+            None => windows::WindowsScreenSource::primary(max_fps)?,
+        }))
+    }
+}
+
+/// Screen capture for macOS arrives in Phase 5.
+#[cfg(not(windows))]
+mod platform {
+    use super::{CaptureError, MonitorInfo, ScreenSource};
+
+    fn unsupported<T>() -> Result<T, CaptureError> {
+        Err(CaptureError::Device(
+            "screen capture is not available on this platform yet".into(),
+        ))
+    }
+
+    pub fn list_monitors() -> Result<Vec<MonitorInfo>, CaptureError> {
+        unsupported()
+    }
+
+    pub fn open_screen(
+        _monitor_id: Option<&str>,
+        _max_fps: u32,
+    ) -> Result<Box<dyn ScreenSource>, CaptureError> {
+        unsupported()
     }
 }
 

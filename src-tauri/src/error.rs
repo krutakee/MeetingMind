@@ -50,6 +50,11 @@ pub enum AppError {
 
     #[error("internal error: a lock was poisoned by an earlier failure")]
     LockPoisoned,
+
+    /// The request was understood and refused (a folder outside the storage folder, a recording that is not waiting
+    /// for recovery).
+    #[error("{0}")]
+    Refused(String),
 }
 
 impl AppError {
@@ -66,6 +71,7 @@ impl AppError {
             AppError::Logging(_) => "logging",
             AppError::Unavailable(_) => "unavailable",
             AppError::LockPoisoned => "lockPoisoned",
+            AppError::Refused(_) => "refused",
         }
     }
 }

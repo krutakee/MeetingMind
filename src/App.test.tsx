@@ -5,20 +5,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { installFakeBackend } from '@/test/fake-backend'
 import { renderApp } from '@/test/render-app'
 
-// TEST DOUBLE: the Tauri bridge is replaced (see src/test/fake-backend.ts).
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+// TEST DOUBLES: the Tauri bridge is replaced for every test (src/test/setup.ts, src/test/fake-backend.ts); the native
+// folder dialog is replaced here.
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }))
 
 describe('App shell', () => {
-  it('opens on the Record screen and says it is not implemented', async () => {
+  it('opens on the Record screen with the recording options', async () => {
     installFakeBackend()
 
     renderApp('/')
 
     expect(await screen.findByRole('heading', { name: 'Record' })).toBeInTheDocument()
-    const status = screen.getByRole('region', { name: 'Status' })
-    expect(status).toHaveTextContent('Not yet implemented')
-    expect(status).toHaveTextContent('Phase 2')
+    expect(await screen.findByRole('button', { name: /Start recording/ })).toBeInTheDocument()
+    expect(screen.queryByText('Not yet implemented')).not.toBeInTheDocument()
   })
 
   it('navigates between Record, Library and Settings and marks the current page', async () => {

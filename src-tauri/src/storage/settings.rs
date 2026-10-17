@@ -142,7 +142,10 @@ fn validate(settings: &Settings) -> Result<Settings, AppError> {
     Ok(valid)
 }
 
-fn read_key<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<T>, AppError> {
+pub(crate) fn read_key<T: DeserializeOwned>(
+    conn: &Connection,
+    key: &str,
+) -> Result<Option<T>, AppError> {
     let raw: Option<String> = conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get(0)
@@ -161,7 +164,11 @@ fn read_key<T: DeserializeOwned>(conn: &Connection, key: &str) -> Result<Option<
     }
 }
 
-fn write_key<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<(), AppError> {
+pub(crate) fn write_key<T: Serialize>(
+    conn: &Connection,
+    key: &str,
+    value: &T,
+) -> Result<(), AppError> {
     let json =
         serde_json::to_string(value).expect("settings values are plain data and always serialize");
     conn.execute(

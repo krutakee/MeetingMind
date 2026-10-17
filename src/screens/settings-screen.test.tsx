@@ -3,11 +3,11 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_INFO, installFakeBackend } from '@/test/fake-backend'
+import { DEFAULT_INFO, DEFAULT_SETTINGS, installFakeBackend } from '@/test/fake-backend'
 import { renderApp } from '@/test/render-app'
 
-// TEST DOUBLES: the Tauri bridge and the native folder dialog are replaced (see src/test/fake-backend.ts).
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+// TEST DOUBLES: the Tauri bridge is replaced for every test (src/test/setup.ts, src/test/fake-backend.ts); the native
+// folder dialog is replaced here.
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn() }))
 
 async function openSettings() {
@@ -58,7 +58,7 @@ describe('Settings screen', () => {
     await userEvent.click(screen.getByRole('switch', { name: /consent/i }))
 
     await waitFor(() => expect(screen.getByRole('switch', { name: /consent/i })).not.toBeChecked())
-    expect(backend.updates()).toEqual([{ storageFolder: null, theme: 'system', consentReminder: false }])
+    expect(backend.updates()).toEqual([{ ...DEFAULT_SETTINGS, consentReminder: false }])
   })
 
   it('applies a chosen theme to the page immediately', async () => {
@@ -127,7 +127,7 @@ describe('Settings screen', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Dark' }))
 
     await waitFor(() => expect(backend.updates()).toHaveLength(2))
-    expect(backend.settings).toEqual({ storageFolder: null, theme: 'dark', consentReminder: false })
+    expect(backend.settings).toEqual({ ...DEFAULT_SETTINGS, theme: 'dark', consentReminder: false })
   })
 
   it('shows startup warnings from the backend', async () => {
@@ -144,7 +144,74 @@ describe('Settings screen', () => {
     await screen.findByRole('table')
 
     const commands = new Set(backend.calls.map((call) => call.command))
-    expect(commands).toEqual(new Set(['get_app_info', 'get_settings', 'get_capabilities']))
+    // recording_status: every screen shares the recorder status, which is asked for once at startup.
+    expect(commands).toEqual(new Set(['get_app_info', 'get_settings', 'get_capabilities', 'recording_status']))
     expect(invoke).toHaveBeenCalled()
+  })
+})
+
+describe('Settings screen: shortcuts', () => {
+  it('shows the two shortcuts', async () => {
+    installFakeBackend()
+
+    await openSettings()
+
+    expect(screen.getByRole('button', { name: /Start or stop recording: Ctrl\+Shift\+S/ })).toHaveTextContent('Ctrl+Shift+S')
+    expect(screen.getByRole('button', { name: /Pause or resume: Ctrl\+Shift\+P/ })).toHaveTextContent('Ctrl+Shift+P')
+  })
+
+  it('saves a new combination pressed after choosing the button, and keeps the other values', async () => {
+    const backend = installFakeBackend()
+    await openSettings()
+
+    await userEvent.click(screen.getByRole('button', { name: /Start or stop recording/ }))
+    expect(screen.getByRole('button', { name: /Start or stop recording/ })).toHaveTextContent('Press the new keys')
+    await userEvent.keyboard('{Control>}{Alt>}r{/Alt}{/Control}')
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Start or stop recording/ })).toHaveTextContent('Ctrl+Alt+R'),
+    )
+    expect(backend.updates()).toEqual([
+      { ...DEFAULT_SETTINGS, hotkeys: { startStop: 'Ctrl+Alt+R', pauseResume: 'Ctrl+Shift+P' } },
+    ])
+  })
+
+  it('explains a combination that is not allowed and saves nothing', async () => {
+    const backend = installFakeBackend()
+    await openSettings()
+
+    await userEvent.click(screen.getByRole('button', { name: /Pause or resume/ }))
+    await userEvent.keyboard('{Shift>}p{/Shift}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Hold Ctrl, Alt')
+    expect(backend.updates()).toEqual([])
+  })
+
+  it('Escape cancels the change', async () => {
+    const backend = installFakeBackend()
+    await openSettings()
+
+    await userEvent.click(screen.getByRole('button', { name: /Pause or resume/ }))
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.getByRole('button', { name: /Pause or resume/ })).toHaveTextContent('Ctrl+Shift+P')
+    expect(backend.updates()).toEqual([])
+  })
+
+  it('shows the backend message when another program already owns the combination', async () => {
+    installFakeBackend({
+      updateError: {
+        kind: 'invalidSetting',
+        message:
+          "invalid setting 'hotkeys': The start/stop shortcut \"Ctrl+Alt+R\" cannot be used: another program may already be using it.",
+      },
+    })
+    await openSettings()
+
+    await userEvent.click(screen.getByRole('button', { name: /Start or stop recording/ }))
+    await userEvent.keyboard('{Control>}{Alt>}r{/Alt}{/Control}')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('another program may already be using it')
+    expect(screen.getByRole('button', { name: /Start or stop recording/ })).toHaveTextContent('Ctrl+Shift+S')
   })
 })

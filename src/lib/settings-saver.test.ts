@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Settings } from '@/lib/ipc'
 import { createSettingsSaver } from '@/lib/settings-saver'
 
-const INITIAL: Settings = { storageFolder: null, theme: 'system', consentReminder: true }
+const HOTKEYS = { startStop: 'Ctrl+Shift+S', pauseResume: 'Ctrl+Shift+P' }
+const INITIAL: Settings = { storageFolder: null, theme: 'system', consentReminder: true, hotkeys: HOTKEYS }
 
 /** A promise the test resolves by hand, to control when a "save" finishes. */
 function deferred<T>() {
@@ -34,7 +35,7 @@ describe('createSettingsSaver', () => {
     await save({ storageFolder: '  C:\\trimmed  ' })
     await save({ theme: 'light' })
 
-    expect(send).toHaveBeenLastCalledWith({ storageFolder: 'C:\\trimmed', theme: 'light', consentReminder: true })
+    expect(send).toHaveBeenLastCalledWith({ storageFolder: 'C:\\trimmed', theme: 'light', consentReminder: true, hotkeys: HOTKEYS })
   })
 
   it('does not start a second save until the first has finished, and keeps both changes', async () => {
@@ -54,7 +55,7 @@ describe('createSettingsSaver', () => {
     await Promise.all([a, b])
 
     expect(send).toHaveBeenCalledTimes(2)
-    expect(send).toHaveBeenLastCalledWith({ storageFolder: null, theme: 'dark', consentReminder: false })
+    expect(send).toHaveBeenLastCalledWith({ storageFolder: null, theme: 'dark', consentReminder: false, hotkeys: HOTKEYS })
   })
 
   it('rejects a failed save, leaves the settings unchanged, and still runs the next save', async () => {
@@ -71,7 +72,7 @@ describe('createSettingsSaver', () => {
     await expect(failing).rejects.toMatchObject({ message: 'nope' })
     await next
     // The failed theme change is not carried into the next save.
-    expect(send).toHaveBeenLastCalledWith({ storageFolder: null, theme: 'system', consentReminder: false })
+    expect(send).toHaveBeenLastCalledWith({ storageFolder: null, theme: 'system', consentReminder: false, hotkeys: HOTKEYS })
     expect(onSaved).toHaveBeenCalledTimes(1)
   })
 })

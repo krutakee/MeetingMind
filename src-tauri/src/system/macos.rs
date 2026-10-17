@@ -20,6 +20,14 @@ impl CapabilityProbe for MacProbe {
 /// Nothing to keep alive on macOS.
 pub fn keep_component_runtime_alive() {}
 
+/// Hiding windows from capture on macOS (a ScreenCaptureKit content filter) arrives in Phase 5.
+pub fn set_app_window_excluded_from_capture(
+    _window: &tauri::WebviewWindow,
+    _excluded: bool,
+) -> Result<(), SystemError> {
+    Err(SystemError::NotSupported("hiding windows from capture"))
+}
+
 pub fn local_now() -> LocalDateTime {
     // SAFETY: `time` and `localtime_r` are given valid pointers to local variables.
     unsafe {

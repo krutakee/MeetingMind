@@ -176,6 +176,8 @@ pub enum WarningKind {
     SourceUnavailable,
     /// The computer could not be kept awake; it may go to sleep during the recording.
     KeepAwakeFailed,
+    /// MeetingMind's own windows cannot be hidden from the recording on this computer, so they may appear in it.
+    OwnWindowVisible,
     SourceLost,
     SourceRestored,
     EncoderFailed,

@@ -35,38 +35,60 @@ pub struct AudioDeviceInfo {
     pub is_default: bool,
 }
 
-#[cfg(not(windows))]
-fn unsupported<T>() -> Result<T, AudioError> {
-    Err(AudioError::Device(
-        "audio capture is not available on this platform yet".into(),
-    ))
-}
-
 /// Microphones and other input devices, the default one flagged.
 pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
-    #[cfg(windows)]
-    return windows::list_microphones();
-    #[cfg(not(windows))]
-    return unsupported();
+    platform::list_microphones()
 }
 
 /// A microphone source. `None` is the default microphone, which is followed if the default changes.
 pub fn open_microphone(device_id: Option<&str>) -> Result<Box<dyn AudioSource>, AudioError> {
-    #[cfg(windows)]
-    return Ok(Box::new(windows::CpalAudioSource::microphone(device_id)?));
-    #[cfg(not(windows))]
-    {
-        let _ = device_id;
-        return unsupported();
-    }
+    platform::open_microphone(device_id)
 }
 
 /// A source for everything the computer plays on its default output device.
 pub fn open_system_audio() -> Result<Box<dyn AudioSource>, AudioError> {
-    #[cfg(windows)]
-    return Ok(Box::new(windows::CpalAudioSource::system_audio(None)?));
-    #[cfg(not(windows))]
-    return unsupported();
+    platform::open_system_audio()
+}
+
+#[cfg(windows)]
+mod platform {
+    use super::{AudioDeviceInfo, AudioError, AudioSource, windows};
+
+    pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
+        windows::list_microphones()
+    }
+
+    pub fn open_microphone(device_id: Option<&str>) -> Result<Box<dyn AudioSource>, AudioError> {
+        Ok(Box::new(windows::CpalAudioSource::microphone(device_id)?))
+    }
+
+    pub fn open_system_audio() -> Result<Box<dyn AudioSource>, AudioError> {
+        Ok(Box::new(windows::CpalAudioSource::system_audio(None)?))
+    }
+}
+
+/// Audio capture for macOS arrives in Phase 5.
+#[cfg(not(windows))]
+mod platform {
+    use super::{AudioDeviceInfo, AudioError, AudioSource};
+
+    fn unsupported<T>() -> Result<T, AudioError> {
+        Err(AudioError::Device(
+            "audio capture is not available on this platform yet".into(),
+        ))
+    }
+
+    pub fn list_microphones() -> Result<Vec<AudioDeviceInfo>, AudioError> {
+        unsupported()
+    }
+
+    pub fn open_microphone(_device_id: Option<&str>) -> Result<Box<dyn AudioSource>, AudioError> {
+        unsupported()
+    }
+
+    pub fn open_system_audio() -> Result<Box<dyn AudioSource>, AudioError> {
+        unsupported()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

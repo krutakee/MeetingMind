@@ -24,15 +24,19 @@ use crate::recording::ffmpeg::{self, FfmpegInfo, H264Kind};
 use crate::recording::metadata::Mode;
 use crate::recording::session::{
     Session, SessionConfig, SessionDeps, SessionError, SessionOutcome, SessionSources, StopReason,
-    Warning,
+    Warning, WarningKind,
 };
 use crate::recording::setup::RecordingSetup;
 use crate::storage::Database;
 use crate::system::disk::DiskSpace;
-use crate::system::{self, PowerManager};
+use crate::system::{self, Capability, CapabilityId, CapabilityStatus, PowerManager};
 
 /// The title used when the user does not type one.
 pub const DEFAULT_TITLE: &str = "Meeting";
+
+/// Notices added by the app (not by the recording itself) are numbered from here, so they never share an id with a
+/// warning from the session.
+const NOTICE_ID_BASE: u64 = 1_000_000_000;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Devices and tools
@@ -109,6 +113,8 @@ pub enum RecorderError {
     NotRecording,
     #[error("{0}")]
     InvalidSetup(&'static str),
+    #[error("Confirm that everyone in the meeting agrees to being recorded before you start.")]
+    ConsentRequired,
     #[error("recording is not possible: {0}")]
     Tools(String),
     #[error("{0}")]
@@ -125,6 +131,7 @@ impl RecorderError {
             RecorderError::Busy => "busy",
             RecorderError::NotRecording => "notRecording",
             RecorderError::InvalidSetup(_) => "invalidSetup",
+            RecorderError::ConsentRequired => "consentRequired",
             RecorderError::Tools(_) => "tools",
             RecorderError::Device(_) => "device",
             RecorderError::Storage(_) => "storage",
@@ -212,6 +219,7 @@ struct Active {
     session: Session,
     title: String,
     mode: Mode,
+    notices: Vec<Warning>,
 }
 
 enum Slot {
@@ -286,6 +294,40 @@ impl Recorder {
         )
     }
 
+    /// What the capability screen shows for video encoders: the encoder recordings will use, or why there is none.
+    pub fn video_encoder_capability(&self) -> Capability {
+        let (status, value, detail) = match self.tools() {
+            Err(why) => (
+                CapabilityStatus::Unavailable,
+                None,
+                format!("Video recording is not possible: {why}"),
+            ),
+            Ok(tools) => match tools.h264 {
+                Ok(kind) => (
+                    CapabilityStatus::Detected,
+                    Some(kind.label().to_string()),
+                    format!(
+                        "The H.264 encoder used for recordings ({}).",
+                        tools.ffmpeg.version
+                    ),
+                ),
+                Err(why) => (
+                    CapabilityStatus::Unavailable,
+                    None,
+                    format!(
+                        "No H.264 video encoder works on this computer ({why}). Audio-only recording still works."
+                    ),
+                ),
+            },
+        };
+        Capability {
+            id: CapabilityId::VideoEncoders,
+            status,
+            value,
+            detail,
+        }
+    }
+
     pub fn devices(&self) -> &dyn Devices {
         self.devices.as_ref()
     }
@@ -342,6 +384,8 @@ impl Recorder {
             },
             Slot::Active(active) => {
                 let snapshot = active.session.snapshot();
+                let mut warnings = snapshot.warnings;
+                warnings.extend(active.notices.iter().cloned());
                 Status {
                     phase: phase_of(&active.session),
                     title: Some(active.title.clone()),
@@ -349,7 +393,7 @@ impl Recorder {
                     elapsed_ms: snapshot.elapsed_ms,
                     microphone_level: snapshot.microphone_level,
                     system_audio_level: snapshot.system_audio_level,
-                    warnings: snapshot.warnings,
+                    warnings,
                     auto_stop: snapshot.auto_stop,
                     finished: None,
                     error: None,
@@ -396,6 +440,7 @@ impl Recorder {
                     session,
                     title,
                     mode: setup.mode,
+                    notices: Vec::new(),
                 }));
                 Ok(())
             }
@@ -548,6 +593,60 @@ impl Recorder {
                 };
                 Err(error.into())
             }
+        }
+    }
+
+    /// Throws the recording away: its folder and database row are deleted. The UI asks the user to confirm first.
+    pub fn cancel(&self) -> Result<(), RecorderError> {
+        let active = {
+            let mut state = self.lock();
+            match std::mem::replace(&mut state.slot, Slot::Idle) {
+                Slot::Active(active) => {
+                    state.slot = Slot::Finalizing {
+                        title: active.title.clone(),
+                        mode: active.mode,
+                        elapsed_ms: active.session.snapshot().elapsed_ms,
+                    };
+                    active
+                }
+                other => {
+                    state.slot = other;
+                    return Err(RecorderError::NotRecording);
+                }
+            }
+        };
+
+        let result = active.session.cancel();
+
+        let mut state = self.lock();
+        state.slot = Slot::Idle;
+        state.last = Last::default();
+        match result {
+            Ok(()) => {
+                info!("recording cancelled and deleted");
+                Ok(())
+            }
+            Err(error) => {
+                warn!(%error, "a cancelled recording could not be fully deleted");
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Adds a notice to the running recording's warnings (something the app, not the recording, noticed). Does
+    /// nothing when no recording is running.
+    pub fn add_notice(&self, kind: WarningKind, message: &str) {
+        let mut state = self.lock();
+        if let Slot::Active(active) = &mut state.slot {
+            let id = NOTICE_ID_BASE + active.notices.len() as u64;
+            let at_media_ms = active.session.snapshot().elapsed_ms;
+            active.notices.push(Warning {
+                id,
+                kind,
+                stream: None,
+                message: message.to_string(),
+                at_media_ms,
+            });
         }
     }
 
