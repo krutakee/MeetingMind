@@ -78,6 +78,7 @@ pub trait CapabilityProbe: Send + Sync {
 }
 
 /// Replaces the capability with the same id (used by platform probes to fill in what they can really detect).
+#[cfg(windows)]
 pub(crate) fn replace_capability(report: &mut CapabilityReport, capability: Capability) {
     match report
         .capabilities
