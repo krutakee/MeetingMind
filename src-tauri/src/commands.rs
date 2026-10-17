@@ -19,9 +19,9 @@ use crate::recorder::{Finished, Recorder, RecorderError, Status};
 use crate::recording::recovery;
 use crate::recording::setup::RecordingSetup;
 use crate::shell;
-use crate::storage::meetings;
 use crate::storage::presets::{self, Preset};
 use crate::storage::{Database, Settings};
+use crate::storage::{cloud, meetings};
 use crate::system::{self, CapabilityReport};
 
 /// Folders the app uses, resolved once at startup.
@@ -210,6 +210,8 @@ pub struct Estimate {
     pub video_height: Option<u32>,
     pub free_bytes: Option<u64>,
     pub storage_folder: String,
+    /// The cloud storage program that uploads the storage folder (OneDrive, Dropbox, ...), if it is in one.
+    pub storage_synced_by: Option<&'static str>,
 }
 
 /// What the choices will cost, and how much room the storage folder has.
@@ -234,13 +236,21 @@ pub fn estimate_recording(
         // Without a monitor to measure, a full HD screen is assumed, which the screen says is only an estimate.
         .unwrap_or((1920, 1080));
     let plan = setup.video_plan(monitor);
+    let storage_folder = recorder.storage_folder()?;
     Ok(Estimate {
         max_bytes_per_hour: setup.max_bytes_per_hour(monitor),
         video_width: plan.map(|p| p.width),
         video_height: plan.map(|p| p.height),
         free_bytes: recorder.free_disk_bytes(),
-        storage_folder: recorder.storage_folder()?.display().to_string(),
+        storage_synced_by: cloud::synced_by(&storage_folder),
+        storage_folder: storage_folder.display().to_string(),
     })
+}
+
+/// The cloud storage program that uploads this folder (OneDrive, Dropbox, ...), or nothing if it is an ordinary one.
+#[tauri::command]
+pub fn storage_sync_provider(path: String) -> Option<&'static str> {
+    cloud::synced_by(Path::new(&path))
 }
 
 #[tauri::command(async)]

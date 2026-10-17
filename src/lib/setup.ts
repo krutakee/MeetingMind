@@ -45,3 +45,12 @@ export function reconcileWithDevices(setup: RecordingSetup, devices: DeviceLists
     microphoneId: microphoneGone ? null : setup.microphoneId,
   }
 }
+
+/** The warning shown when the storage folder is uploaded by a cloud storage program. */
+export function cloudSyncWarning(provider: string): string {
+  return (
+    `This folder is synced by ${provider}, so your recordings (the video and sound of your meetings) are uploaded to ` +
+    `its servers. MeetingMind itself never sends anything anywhere. Choose another folder in Settings if that is not ` +
+    `what you want.`
+  )
+}

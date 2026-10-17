@@ -19,7 +19,15 @@ import {
   type RecordingMode,
   type RecordingSetup,
 } from '@/lib/ipc'
-import { DEFAULT_SETUP, FRAME_RATES, QUALITY_LABELS, chosenMonitor, describeMonitor, reconcileWithDevices } from '@/lib/setup'
+import {
+  DEFAULT_SETUP,
+  FRAME_RATES,
+  QUALITY_LABELS,
+  chosenMonitor,
+  cloudSyncWarning,
+  describeMonitor,
+  reconcileWithDevices,
+} from '@/lib/setup'
 import { MonitorPreview } from '@/screens/record/monitor-preview'
 import { PresetsBar } from '@/screens/record/presets-bar'
 import { useAppState } from '@/state/app-state'
@@ -263,6 +271,7 @@ export function SetupPanel() {
               <p className="text-muted-foreground">Working out how much space this needs…</p>
             )}
           </section>
+          {estimate?.storageSyncedBy && <Notice tone="warning">{cloudSyncWarning(estimate.storageSyncedBy)}</Notice>}
           {tooLittleSpace && (
             <Notice tone="warning">
               There is less free space than one hour of this recording can need. Free some space or choose a lower

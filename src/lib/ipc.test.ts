@@ -104,6 +104,17 @@ describe('recording commands', () => {
   })
 })
 
+describe('storage folder check', () => {
+  it('asks the backend which cloud storage program uploads a folder', async () => {
+    vi.mocked(invoke).mockResolvedValue('OneDrive')
+
+    const provider = await ipc.storageSyncProvider('C:\\Users\\a\\OneDrive\\Meetings')
+
+    expect(provider).toBe('OneDrive')
+    expect(invoke).toHaveBeenCalledWith('storage_sync_provider', { path: 'C:\\Users\\a\\OneDrive\\Meetings' })
+  })
+})
+
 describe('parsePreviewFrame', () => {
   function bytes(sequence: number, width: number, height: number, extra = 0): ArrayBuffer {
     const buffer = new ArrayBuffer(16 + width * height * 4 + extra)

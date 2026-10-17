@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Notice } from '@/components/ui/notice'
 import { Switch } from '@/components/ui/switch'
 import {
   errorMessage,
@@ -13,6 +14,7 @@ import {
   type Settings,
   type Theme,
 } from '@/lib/ipc'
+import { cloudSyncWarning } from '@/lib/setup'
 import { THEME_LABELS } from '@/lib/theme'
 import { ShortcutField } from '@/screens/shortcut-field'
 import { useAppState } from '@/state/app-state'
@@ -74,6 +76,8 @@ function SettingsForm({ settings }: { settings: Settings }) {
   }
 
   const usingDefaultFolder = settings.storageFolder === null
+  const shownFolder = settings.storageFolder ?? info.defaultStorageFolder
+  const syncedBy = useStorageSyncProvider(shownFolder)
 
   return (
     <div className="max-w-3xl space-y-10">
@@ -119,6 +123,7 @@ function SettingsForm({ settings }: { settings: Settings }) {
           {usingDefaultFolder ? 'This is the default folder.' : 'This is a folder you chose.'} MeetingMind creates
           it when the first recording is saved.
         </p>
+        {syncedBy && <Notice tone="warning">{cloudSyncWarning(syncedBy)}</Notice>}
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => void chooseFolder()}>
             Choose folder…
@@ -184,6 +189,25 @@ function SettingsForm({ settings }: { settings: Settings }) {
       </Section>
     </div>
   )
+}
+
+/** Which cloud storage program (if any) uploads the folder; asked again whenever the folder changes. */
+function useStorageSyncProvider(folder: string): string | null {
+  const [result, setResult] = useState<{ folder: string; provider: string | null } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    ipc
+      .storageSyncProvider(folder)
+      .then((provider) => {
+        if (!cancelled) setResult({ folder, provider })
+      })
+      .catch(() => undefined) // The warning is a courtesy: not being able to check is not worth an error.
+    return () => {
+      cancelled = true
+    }
+  }, [folder])
+  // An answer for a folder that is no longer shown is not shown either.
+  return result && result.folder === folder ? result.provider : null
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

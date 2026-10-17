@@ -156,6 +156,7 @@ pub fn run() {
             commands::get_capabilities,
             commands::list_devices,
             commands::estimate_recording,
+            commands::storage_sync_provider,
             commands::start_preview,
             commands::stop_preview,
             commands::get_preview_frame,

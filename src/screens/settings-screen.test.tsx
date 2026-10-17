@@ -145,8 +145,44 @@ describe('Settings screen', () => {
 
     const commands = new Set(backend.calls.map((call) => call.command))
     // recording_status: every screen shares the recorder status, which is asked for once at startup.
-    expect(commands).toEqual(new Set(['get_app_info', 'get_settings', 'get_capabilities', 'recording_status']))
+    // storage_sync_provider: the Storage section checks whether the folder is uploaded by a cloud program.
+    expect(commands).toEqual(
+      new Set(['get_app_info', 'get_settings', 'get_capabilities', 'recording_status', 'storage_sync_provider']),
+    )
     expect(invoke).toHaveBeenCalled()
+  })
+})
+
+describe('Settings screen: cloud storage warning', () => {
+  it('warns when the folder shown is uploaded by a cloud storage program', async () => {
+    const backend = installFakeBackend({ storageSyncedBy: 'OneDrive' })
+
+    await openSettings()
+
+    const storage = screen.getByRole('region', { name: 'Storage' })
+    expect(await within(storage).findByText(/synced by OneDrive/)).toBeInTheDocument()
+    expect(backend.argsOf('storage_sync_provider')).toEqual([{ path: DEFAULT_INFO.defaultStorageFolder }])
+  })
+
+  it('says nothing for an ordinary folder', async () => {
+    const backend = installFakeBackend()
+
+    await openSettings()
+    await waitFor(() => expect(backend.argsOf('storage_sync_provider')).toHaveLength(1))
+
+    expect(screen.queryByText(/synced by/)).not.toBeInTheDocument()
+  })
+
+  it('checks the folder again when another one is chosen', async () => {
+    const backend = installFakeBackend()
+    vi.mocked(open).mockResolvedValue('D:\\Recordings')
+    await openSettings()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Choose folder…' }))
+
+    await waitFor(() =>
+      expect(backend.argsOf('storage_sync_provider')).toContainEqual({ path: 'D:\\Recordings' }),
+    )
   })
 })
 

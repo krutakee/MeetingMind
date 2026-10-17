@@ -92,6 +92,7 @@ export const DEFAULT_ESTIMATE: Estimate = {
   videoHeight: 1080,
   freeBytes: 200 * 1024 ** 3,
   storageFolder: 'C:\\Users\\test\\Documents\\MeetingMind\\Meetings',
+  storageSyncedBy: null,
 }
 
 export const IDLE_STATUS: RecorderStatus = {
@@ -143,6 +144,8 @@ export interface FakeBackendOptions {
   startError?: BackendError
   /** Makes recover_recording fail with this error. */
   recoverError?: BackendError
+  /** The cloud storage program storage_sync_provider reports for every folder (default: none). */
+  storageSyncedBy?: string | null
   /** The bytes get_preview_frame answers with (default: nothing yet). */
   previewFrame?: ArrayBuffer
 }
@@ -207,6 +210,8 @@ export function installFakeBackend(options: FakeBackendOptions = {}): FakeBacken
         return options.devices ?? DEFAULT_DEVICES
       case 'estimate_recording':
         return options.estimate ?? DEFAULT_ESTIMATE
+      case 'storage_sync_provider':
+        return options.storageSyncedBy ?? null
       case 'start_preview':
       case 'stop_preview':
         return undefined

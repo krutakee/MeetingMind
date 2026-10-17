@@ -10,6 +10,9 @@
 //!   device rate is measured against media time over a sliding window; only when it is off by more than a few ppm is
 //!   a tiny rate correction applied (linear interpolation). A device that keeps good time is never touched, so its
 //!   audio stays bit-exact. Measured on this machine's built-in devices: about 0.2 ppm.
+//!   Silence inserted for a gap is not audio the device delivered, so a gap starts the measurement afresh: counted as
+//!   drift, a 0.6 s restart after a pause once read as a clock 1.3 % slow. A measurement that no device clock could
+//!   produce (see `drift_max_ppm`) is reported but never applied.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -26,6 +29,9 @@ pub struct TimelineConfig {
     pub drift_engage_ppm: f64,
     /// ... and stops when it falls below this.
     pub drift_release_ppm: f64,
+    /// A measured drift beyond this is not a clock difference (USB audio is off by up to about 1000 ppm at worst);
+    /// it is reported but never corrected, because stretching the audio that much would be audible.
+    pub drift_max_ppm: f64,
     /// The drift is not trusted until this much media time has been measured.
     pub drift_min_window: Duration,
     /// Older measurements than this are forgotten.
@@ -41,6 +47,7 @@ impl TimelineConfig {
             min_logged_gap: Duration::from_millis(250),
             drift_engage_ppm: 3.0,
             drift_release_ppm: 1.5,
+            drift_max_ppm: 2000.0,
             drift_min_window: Duration::from_secs(30),
             drift_max_window: Duration::from_secs(120),
         }
@@ -126,8 +133,10 @@ impl AudioTimeline {
                 });
             }
             self.written += missing;
-            // Any resampler state refers to audio before the gap.
+            // Any resampler state refers to audio before the gap, and so do the drift measurements: the silence just
+            // inserted is not frames the device delivered.
             self.resampler = None;
+            self.restart_drift_measurement();
         } else if self.written > expected + tolerance {
             let repeated = (self.written - expected).min(frames_in);
             body = &chunk[(repeated as usize) * self.channels..];
@@ -188,13 +197,23 @@ impl AudioTimeline {
         self.drift_ppm = Some(ppm);
 
         let engaged = self.resampler.is_some();
-        if !engaged && ppm.abs() > self.config.drift_engage_ppm {
+        if ppm.abs() > self.config.drift_max_ppm {
+            // Not a clock difference: leave the audio as delivered (the overlap and gap handling keeps it on media time).
+            self.resampler = None;
+        } else if !engaged && ppm.abs() > self.config.drift_engage_ppm {
             self.resampler = Some(LinearResampler::new(self.channels, 1.0 + ppm / 1e6));
         } else if engaged && ppm.abs() < self.config.drift_release_ppm {
             self.resampler = None;
         } else if let Some(resampler) = &mut self.resampler {
             resampler.set_step(1.0 + ppm / 1e6);
         }
+    }
+
+    /// Forgets the drift measurements taken so far (the next ones start a new window). The last estimate is kept for
+    /// the report until a new one replaces it.
+    fn restart_drift_measurement(&mut self) {
+        self.samples.clear();
+        self.since_estimate = 0;
     }
 
     /// Silence that brings the stream up to `media_time`, or nothing if it is already there or beyond. Used at the end
@@ -214,6 +233,7 @@ impl AudioTimeline {
         }
         self.written = target;
         self.resampler = None;
+        self.restart_drift_measurement();
         vec![0.0; (missing as usize) * self.channels]
     }
 
@@ -599,6 +619,128 @@ mod tests {
             .map(|w| (w[1] - w[0]).abs())
             .fold(0.0f32, f32::max);
         assert!(max_step < 0.031, "largest sample-to-sample step {max_step}");
+    }
+
+    /// A device with perfect timing that stops delivering for `gap` seconds (a pause, a cable pulled) and then carries on
+    /// with the true timestamps. Returns the timeline and everything written.
+    fn run_clean_device_with_a_stop(
+        seconds_before: f64,
+        gap: f64,
+        seconds_after: f64,
+    ) -> (AudioTimeline, Vec<f32>) {
+        let mut t = timeline(1);
+        let mut written = Vec::new();
+        let chunk_seconds = CHUNK as f64 / RATE as f64;
+        let total = seconds_before + gap + seconds_after;
+        let (mut clock, mut delivered) = (0.0f64, 0u64);
+        while clock < total {
+            let stopped = clock >= seconds_before && clock < seconds_before + gap;
+            if !stopped {
+                written.extend(t.place(secs(clock), &chunk_at(delivered * CHUNK as u64, CHUNK)));
+                delivered += 1;
+            }
+            clock += chunk_seconds;
+        }
+        (t, written)
+    }
+
+    /// Found on real hardware: the microphone restarts about 0.6 s late after a pause. That silence is not frames the
+    /// device delivered, so it used to read as a device clock 1.3 % slow, and the audio was stretched by that much and
+    /// then trimmed once a second (71 "repeated audio" errors in 73 s).
+    #[test]
+    fn a_stop_in_the_middle_is_not_mistaken_for_drift() {
+        let (mut t, written) = run_clean_device_with_a_stop(40.0, 0.63, 60.0);
+
+        let media_seconds = 100.63;
+        let written_seconds = written.len() as f64 / RATE as f64;
+        assert!(
+            (written_seconds - media_seconds).abs() < 0.025,
+            "off by {:.1} ms",
+            (written_seconds - media_seconds) * 1000.0
+        );
+        assert!(
+            !t.is_correcting_drift(),
+            "a clean device must not be resampled"
+        );
+        if let Some(ppm) = t.drift_ppm() {
+            assert!(ppm.abs() < 5.0, "measured {ppm:.1} ppm on a clean device");
+        }
+        let events = t.take_events();
+        assert!(
+            matches!(events.as_slice(), [TimelineEvent::Gap { .. }]),
+            "only the stop itself is reported, nothing is repeated or dropped: {events:?}"
+        );
+    }
+
+    #[test]
+    fn the_audio_after_a_stop_is_untouched() {
+        let (_t, written) = run_clean_device_with_a_stop(10.0, 0.63, 60.0);
+
+        // Everything after the silence is the device's own samples, in order: no stretching, no dropped blocks.
+        let resumed_at = (10.63 * RATE as f64) as usize;
+        let after = &written[resumed_at + CHUNK..];
+        let first_device_frame = (10.0 * RATE as f64) as u64 + CHUNK as u64;
+        let largest_step = after
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(largest_step < 0.031, "a click: step {largest_step}");
+        assert_eq!(
+            after[0],
+            sine(first_device_frame),
+            "the sine continues exactly where the device left it"
+        );
+    }
+
+    #[test]
+    fn real_drift_is_still_measured_after_a_stop() {
+        // 80 s on a clean clock, a stop, then 150 s on a device that is 100 ppm fast.
+        let mut t = timeline(1);
+        let device_rate = RATE as f64 * (1.0 + 100.0 / 1e6);
+        let chunk_seconds = CHUNK as f64 / RATE as f64;
+        let mut clock = 0.0f64;
+        let mut delivered = 0u64;
+        while clock < 80.0 {
+            t.place(secs(clock), &chunk_at(delivered * CHUNK as u64, CHUNK));
+            delivered += 1;
+            clock += chunk_seconds;
+        }
+        clock += 0.63;
+        let restart = clock;
+        let mut after = 0u64;
+        while clock < restart + 150.0 {
+            let media = restart + (after * CHUNK as u64) as f64 / device_rate;
+            t.place(
+                secs(media),
+                &chunk_at((delivered + after) * CHUNK as u64, CHUNK),
+            );
+            after += 1;
+            clock = media + CHUNK as f64 / device_rate;
+        }
+
+        let ppm = t
+            .drift_ppm()
+            .expect("drift is measured again after the stop");
+        assert!((ppm - 100.0).abs() < 10.0, "measured {ppm:.1} ppm");
+        assert!(t.is_correcting_drift());
+    }
+
+    #[test]
+    fn an_implausible_drift_is_reported_but_never_applied() {
+        // 2 % is not a clock error any audio hardware has. Stretching the audio by that much would be audible, so the
+        // timeline keeps the audio as delivered and lets the overlap handling keep the track on media time.
+        let (mut t, written) = run_drifting_device(20_000.0, 120);
+
+        assert!(!t.is_correcting_drift());
+        let ppm = t.drift_ppm().expect("measured anyway");
+        assert!((ppm - 20_000.0).abs() < 500.0, "measured {ppm:.0} ppm");
+        let written_seconds = written.len() as f64 / RATE as f64;
+        assert!(
+            (written_seconds - 120.0).abs() < 0.05,
+            "still on media time: off by {:.1} ms",
+            (written_seconds - 120.0) * 1000.0
+        );
+        assert!(!t.take_events().is_empty(), "the repeats are reported");
     }
 
     #[test]

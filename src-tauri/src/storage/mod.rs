@@ -1,5 +1,6 @@
 //! SQLite storage. OS-agnostic: nothing in here may use platform APIs.
 
+pub mod cloud;
 pub mod meetings;
 pub mod migrations;
 pub mod presets;

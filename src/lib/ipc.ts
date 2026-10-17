@@ -114,6 +114,8 @@ export interface Estimate {
   videoHeight: number | null
   freeBytes: number | null
   storageFolder: string
+  /** The cloud storage program that uploads the storage folder ("OneDrive", ...), or null. */
+  storageSyncedBy: string | null
 }
 
 export type Phase = 'idle' | 'starting' | 'recording' | 'paused' | 'finalizing'
@@ -204,6 +206,8 @@ export const ipc = {
 
   listDevices: () => invoke<DeviceLists>('list_devices'),
   estimateRecording: (setup: RecordingSetup) => invoke<Estimate>('estimate_recording', { setup }),
+  /** The cloud storage program that uploads this folder, or null for an ordinary folder. */
+  storageSyncProvider: (path: string) => invoke<string | null>('storage_sync_provider', { path }),
   startPreview: (monitorId: string | null) => invoke<void>('start_preview', { monitorId }),
   stopPreview: () => invoke<void>('stop_preview'),
   getPreviewFrame: (since: number) => invoke<ArrayBuffer>('get_preview_frame', { since }),

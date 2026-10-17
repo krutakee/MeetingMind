@@ -4,6 +4,7 @@ import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { RecordingSetup } from '@/lib/ipc'
 import {
+  DEFAULT_ESTIMATE,
   DEFAULT_SETTINGS,
   FINISHED,
   IDLE_STATUS,
@@ -58,12 +59,35 @@ describe('Record screen: setting up', () => {
         videoHeight: 1080,
         freeBytes: 1024 ** 3,
         storageFolder: 'C:\\Meetings',
+        storageSyncedBy: null,
       },
     })
 
     await openRecord()
 
     expect(await screen.findByText(/less free space than one hour/)).toBeInTheDocument()
+  })
+
+  it('warns that a cloud storage program uploads the storage folder', async () => {
+    installFakeBackend({
+      estimate: { ...DEFAULT_ESTIMATE, storageFolder: 'C:\\Users\\test\\OneDrive\\Meetings', storageSyncedBy: 'OneDrive' },
+    })
+
+    await openRecord()
+
+    const warning = await screen.findByText(/synced by OneDrive/)
+    expect(warning).toHaveTextContent('uploaded to its servers')
+    expect(warning).toHaveTextContent('never sends anything anywhere')
+    expect(warning.closest('[role="alert"]')).not.toBeNull()
+  })
+
+  it('shows no cloud warning for an ordinary folder', async () => {
+    installFakeBackend()
+
+    await openRecord()
+    await screen.findByRole('region', { name: 'Estimate' })
+
+    expect(screen.queryByText(/synced by/)).not.toBeInTheDocument()
   })
 
   it('hides the screen options for an audio-only recording and asks for a source', async () => {
