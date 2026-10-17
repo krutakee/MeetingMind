@@ -1,7 +1,7 @@
 # Phase 2 plan — Windows recording
 
 **Status: approved 2026-10-16. M0 (spikes) is done; its results are in [phase-2-spikes.md](phase-2-spikes.md) and are
-applied below. M1 to M4 are done (Section 8; the real-microphone check is open, see phase-2-report.md). Hotkeys changed in review: see Section 10.**
+applied below. M1 to M4 are done and all four acceptance criteria are met (Section 8; see phase-2-report.md). Hotkeys changed in review: see Section 10.**
 Scope and acceptance criteria come from SPEC.md Sections 5 and 11 and do not change here. This document says how
 they will be met, what was checked, what is still unverified, and what needs a decision.
 
@@ -207,7 +207,7 @@ Each step ends with passing tests and a commit. I stop and report if a step brea
 | M1 Core (**done 2026-10-16**) | Everything that needs no hardware: clock, state machine, pacer, drift correction, folder layout, `meeting.json`, migration 0002, disk guard, FFmpeg manager, synthetic sources, end-to-end and recovery tests. | Tests green locally (174 Rust tests, FFmpeg required) and in CI. |
 | M2 Windows sources (**done 2026-10-16**) | Real capture and audio, sleep guard, window exclusion, session events, disk space, capability probe updates. | Smoke recordings on this machine: passed (see "What M2 settled"). |
 | M3 UI (**done 2026-10-17**) | Record screen, control window, tray, hotkeys, consent, banners, recovery prompt, playback. | Vitest, Rust end-to-end tests, and a manual pass driving the real app (see "What M3 settled"). |
-| M4 Acceptance (**done 2026-10-17, except the real-microphone check**) | The four criteria above, docs, `LICENSES.md`, CI changes (fetch and cache the sidecar, run FFmpeg tests on the Windows runner). | [Phase report](phase-2-report.md). |
+| M4 Acceptance (**done 2026-10-17**) | The four criteria above, docs, `LICENSES.md`, CI changes (fetch and cache the sidecar, run FFmpeg tests on the Windows runner). | [Phase report](phase-2-report.md). |
 
 CI note: the Windows runner downloads the pinned FFmpeg (`pnpm fetch:ffmpeg`, checksum-verified) and runs the tests with
 `REQUIRE_FFMPEG=1`, so a missing FFmpeg fails the build instead of skipping tests. The macOS runner has no FFmpeg yet;

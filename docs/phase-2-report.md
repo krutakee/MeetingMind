@@ -1,47 +1,51 @@
 # Phase 2 report — Windows recording
 
-Written 2026-10-17. Plan: [phase-2-plan.md](phase-2-plan.md). Phase 2 is **not accepted yet**: three of the four
-criteria are met and measured; the fourth (unplugging the microphone) needs an external microphone that this
-computer does not have, so it has not been checked on real hardware (Section 7).
+Written 2026-10-17. Plan: [phase-2-plan.md](phase-2-plan.md). All four acceptance criteria are met and measured on
+the real devices (Section 1). The last one, unplugging the microphone, was checked with a real USB headset and found a
+second defect (the system audio stayed silent after the headset was plugged back in), which is fixed and re-checked
+(Section 4, item 7). What was not verified is listed in Section 7.
 
 ## 1. The four criteria
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| 2-hour recording: drift under 100 ms, memory flat | **Met**, twice | Two 2-hour recordings on the real devices. Time between the screen flash and the tone: changed by -14.1 ms and by -12.1 ms from the first to the last markers. Memory: -29.9 % and -0.4 % growth (limit +5 %). Section 3. |
+| 2-hour recording: drift under 100 ms, memory flat | **Met**, three times | Three 2-hour recordings on the real devices (the last one on the final capture code, with a USB microphone and USB speakers). Time between the screen flash and the tone: changed by -14.1, -12.1 and -21.5 ms from the first to the last markers. Memory: -29.9 %, -0.4 % and -17.0 % growth (limit +5 %). Section 3. |
 | Killing the app mid-recording leaves a recoverable, playable file | **Met** | Kill test with the real FFmpeg (5 of 5 runs, M1) and, on the real app, a hard kill during a recording, then recovery through the recovery dialog: 12.2 s recovered, all three tracks within 20 ms of each other, `recovered: true`. |
-| Unplugging the microphone does not stop the recording | **Not checked on real hardware** | Passes with a synthetic microphone (`session_e2e`, `recorder_e2e`). The real check, `src-tauri/tests/mic_unplug.rs`, is written and needs an external USB or 3.5 mm microphone and a person to unplug it. |
+| Unplugging the microphone does not stop the recording | **Met** | `src-tauri/tests/mic_unplug.rs` with a real USB headset (Microphone and Speakers "USB PnP Audio Device"), unplugged and plugged back in by a person during a 196 s recording. The recording carried on; the microphone gap is listed in `meeting.json` (148.9 s to 185.8 s, 36.9 s, as long as the unplug); the microphone came back by itself; the system audio had a 0.6 s gap at the unplug and none worth listing at the plug-in; all three files within 0.03 s of the media length. The first two tries found the defect in Section 4, item 7. |
 | The control window is not in the recorded video | **Met** | `scripts/manual-checks/check-control-window-hidden.ps1`: the control window is painted solid green and is on the screen (position 800,12, 336x93, capture exclusion set, page colour read back) while recording 8 s; 159 frames scanned for green in that place: none. The scanner has a self-test that proves it finds green when it is there. |
 
 ## 2. The machine
 
 Everything below ran on **IV-LT-Han**: Windows 11 Enterprise build 26200, Intel Core Ultra 7 265U (12 cores, 14
 threads), 31.5 GB RAM, Intel graphics with a hardware H.264 encoder (`h264_mf`, hardware), built-in SoundWire microphone
-and speakers (CS42L43), two monitors connected at the time (HP 27xw, main, and DELL S2719NX, both 1920x1080; the
-built-in screen was off). This is **faster than the reference machine** (Core i5 or Ultra 5, 16 GB, integrated graphics
+and speakers (CS42L43) and, from 2026-10-17 morning, a USB headset ("USB PnP Audio Device", 48 kHz stereo, microphone
+and speakers) that Windows makes the default when it is plugged in. Two monitors connected (HP 27xw, main, and DELL
+S2719NX, both 1920x1080; the built-in screen was off). Runs 1 and 2 used the built-in microphone and speakers; run 3
+and the microphone check used the USB headset. This is **faster than the reference machine** (Core i5 or Ultra 5, 16 GB, integrated graphics
 only), so CPU numbers here are on the optimistic side. Nothing was measured on the reference class of machine.
 
 ## 3. Measurements
 
-Both long runs: default setup (main monitor, microphone, system audio, 1080p, 15 fps), the app's own `Recorder`, the
+The three long runs: default setup (main monitor, microphone, system audio, 1080p, 15 fps), the app's own `Recorder`, the
 machine left alone, a marker every 60 s (a 0.4 s magenta window on the screen and a 1 kHz tone at -30 dBFS together).
 The markers are found in the saved files: the flash in the video, the tone in the system-audio track.
 
-| | Run 1 | Run 2 |
-|---|---|---|
-| Code | before the capture fixes of Section 4 | with the OS frame throttle and frame timestamps |
-| Recorded | 7200.514 s | 7201.633 s |
-| Warnings, gaps, errors | 0, 0, 0 | 0, 0, 0 |
-| Length of video / microphone / system audio vs media | within 16 ms | within 27 ms |
-| Video minus audio, mean of first / last markers | 20.0 ms / 5.9 ms | 30.5 ms / 18.4 ms |
-| Change (limit 100 ms) | **-14.1 ms** | **-12.1 ms** |
-| Median of the same markers | 20 ms / 0 ms | 26.7 ms / 20.0 ms |
-| Largest single offset | 910 ms (6 flashes over 150 ms late) | 63 ms |
-| Markers whose flash is in the video | 106 of 122 | 120 of 123 |
-| Memory (this program plus its FFmpeg processes), minutes 10-15 / last 5 min | 459 / 322 MB (-29.9 %) | 461 / 459 MB (-0.4 %) |
-| Peak memory, average CPU | 473 MB, 29 % of one core | 469 MB, 29 % of one core |
-| Time to stop and save | 151 s | 134 s |
-| Clock error reported (microphone / system audio) | 0.21 / 0.19 ppm | 1.55 / -89.22 ppm |
+| | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Code | before the capture fixes of Section 4 | with the OS frame throttle and frame timestamps | final capture code (also the frame relay) |
+| Devices | built-in | built-in | USB headset |
+| Recorded | 7200.514 s | 7201.633 s | 7201.213 s |
+| Warnings, gaps, errors | 0, 0, 0 | 0, 0, 0 | 0, 0, 0 |
+| Length of video / microphone / system audio vs media | within 16 ms | within 27 ms | within 47 ms |
+| Video minus audio, mean of first / last markers | 20.0 ms / 5.9 ms | 30.5 ms / 18.4 ms | 21.3 ms / -0.2 ms |
+| Change (limit 100 ms) | **-14.1 ms** | **-12.1 ms** | **-21.5 ms** |
+| Median of the same markers | 20 ms / 0 ms | 26.7 ms / 20.0 ms | 23.3 ms / 3.3 ms |
+| Largest single offset | 910 ms (6 flashes over 150 ms late) | 63 ms | 60 ms |
+| Markers whose flash is in the video | 106 of 122 | 120 of 123 | **120 of 120** |
+| Memory (this program plus its FFmpeg processes), minutes 10-15 / last 5 min | 459 / 322 MB (-29.9 %) | 461 / 459 MB (-0.4 %) | 461 / 382 MB (-17.0 %) |
+| Peak memory, average CPU | 473 MB, 29 % of one core | 469 MB, 29 % of one core | 470 MB, 30 % of one core |
+| Time to stop and save | 151 s | 134 s | 120 s |
+| Clock error reported (microphone / system audio) | 0.21 / 0.19 ppm | 1.55 / -89.22 ppm | 0.19 / -0.96 ppm |
 
 How to read it:
 - The video side can only be read to the 15 fps frame grid (66 ms). To get better than that, every marker starts 0 to 66
@@ -80,6 +84,20 @@ Found by recording on the real devices and driving the real app; each is in the 
    `Downloads\MeetingMind` (a user decision), and the Record screen and Settings warn if the chosen folder is under
    OneDrive, Dropbox, Google Drive or iCloud Drive.
 
+7. **System audio lost after a headset was plugged in or out** (M4, found by the real microphone check). A USB headset
+   that is the default microphone and speakers moves both defaults when it is plugged in or out. After it was plugged back
+   in, the system audio stayed silent until the end of the recording (about 10 s in the first try): every attempt to reopen
+   the loopback failed with "Cannot change thread mode after it is set", and the reason was not logged anywhere. Three
+   changes: (a) the audio source checks every 0.5 s whether the default device changed and follows it (before, a stream on
+   the old default that was still valid would have recorded silence with no warning); (b) a device whose sample rate or
+   channel count differs from the recording's is converted to it (`audio/convert.rs`, unit-tested) instead of being
+   refused; (c) why a device cannot be reopened is logged once per reason. The cause was none of the first guesses (a
+   different format: the USB headset is 48 kHz stereo like the built-in devices; the COM thread mode: making the audio
+   threads multithreaded made it worse and was reverted). It was cpal's "default device" stand-in, which activates the
+   audio client through an asynchronous path; the default device is now looked up and then opened as the real device it is.
+   With that, the same unplug and plug-in gave a 0.6 s system-audio gap and no loss. The conversion in (b) was not
+   exercised on real hardware (both devices had the same format); it is covered by unit tests only.
+
 ### Final validation (code with all of the above)
 
 The 2-hour runs of Section 3 were made before fix 5. The final code was run for 20 and for 40 minutes with a marker every
@@ -102,9 +120,9 @@ No gap or error goes with them. They may be the desktop not composing the test's
 test), but that was not shown. The soak test fails if fewer than 95 % of the markers reach the video, which catches the
 defect of fix 3 (87 to 91 %) without claiming to remove what is not understood.
 
-The final code was not run for the full two hours: the acceptance numbers of Section 3 are from the two earlier
-2-hour runs plus these shorter ones. A third 2-hour run on the final code costs 2 hours of an idle machine and is not
-expected to change the result; it can be done on request.
+Run 3 (Section 3) is the 2-hour run on the final capture code; the recorder's queue never filled in it, so the relay
+was not needed there. The audio-device fix of item 7 came after it; it changes how a device is found and followed, not
+the recording of a steady device.
 
 ## 5. What works
 
@@ -115,7 +133,7 @@ playback. Details of M3 are in phase-2-plan.md ("What M3 settled").
 
 ## 6. Tests
 
-- Rust: 207 unit tests, session end to end (14), recorder end to end (14), preview (3), recovery with a killed process
+- Rust: 216 unit tests, session end to end (14), recorder end to end (14), preview (3), recovery with a killed process
   (5), real FFmpeg (8), logging and log guard, with the real FFmpeg and synthetic devices. CI runs them on Windows with
   `REQUIRE_FFMPEG`; a skipped test never counts as a pass.
 - Frontend: 132 Vitest tests.
@@ -128,15 +146,17 @@ playback. Details of M3 are in phase-2-plan.md ("What M3 settled").
 
 ## 7. What does not work, and what is blocked
 
-- **Blocked on hardware: the microphone-unplug check on real hardware.** Needs an external USB or 3.5 mm microphone
-  (a headset works) and someone to unplug and replug it when the test asks. Run: `cargo test --test mic_unplug --
-  --ignored --nocapture` from `src-tauri/` with the microphone connected.
+- **Not verified: the format conversion on a real device change** (only unit tests; the USB headset has the same format as
+  the built-in devices), and a headset plugged in while **paused** or at the moment a recording **starts**.
 - **Not exercised on a real desktop:** clicking the tray menu entries and seeing the icon states; Quit and hide-on-close
   while recording; a shortcut already owned by another program; Cancel in the native consent dialog.
 - **Known limit:** after a pause, the microphone and system-audio tracks are silent for about 0.5 s while the devices
   restart; it is listed in `meeting.json` as a gap.
 - **Residual loss of rare short screen states** (Section 4, "Not fully explained").
 - macOS: only stubs; compiled and linted in CI (Phase 5).
+- **The development computer:** a Dell support service (`DellSupportAssistRemedationService`) held 53 to 60 GB of committed
+  memory and growing, so builds failed at times with "the paging file is too small"; building with fewer parallel jobs
+  worked. A restart clears it; IT should look at the service.
 - The installer: `pnpm tauri build` cannot extract the NSIS tool on the development computer (a company allow-list
   blocks it); CI builds the installer. FFmpeg is bundled as a Windows sidecar; the installed app was not run from the
   installer.

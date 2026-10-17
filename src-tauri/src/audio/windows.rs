@@ -99,20 +99,35 @@ enum Kind {
     Loopback,
 }
 
+/// The device with this id, or (`None`) the one that is the default right now.
+///
+/// The default is looked up by name and then opened as the real device it is. cpal's own "default device" is a
+/// stand-in that activates the audio client through an asynchronous path; after a USB headset was plugged back in
+/// during a recording (2026-10-17) that path failed with "Cannot change thread mode after it is set" on every try, and
+/// the system audio stayed silent until the end. The real device is activated directly, which is what already
+/// worked for a device chosen by name.
 fn find_device(host: &cpal::Host, kind: Kind, id: Option<&str>) -> Option<Device> {
-    let default = || match kind {
-        Kind::Microphone => host.default_input_device(),
-        Kind::Loopback => host.default_output_device(),
+    let all = || -> Option<Vec<Device>> {
+        Some(match kind {
+            Kind::Microphone => host.input_devices().ok()?.collect(),
+            Kind::Loopback => host.output_devices().ok()?.collect(),
+        })
+    };
+    let with_id = |wanted: &str| -> Option<Device> {
+        let mut devices = all()?;
+        devices.retain(|d| d.id().map(|i| i.to_string() == wanted).unwrap_or(false));
+        devices.pop()
     };
     match id {
-        None => default(),
-        Some(id) => {
-            let mut devices: Vec<Device> = match kind {
-                Kind::Microphone => host.input_devices().ok()?.collect(),
-                Kind::Loopback => host.output_devices().ok()?.collect(),
-            };
-            devices.retain(|d| d.id().map(|i| i.to_string() == id).unwrap_or(false));
-            devices.pop()
+        Some(id) => with_id(id),
+        None => {
+            let stand_in = match kind {
+                Kind::Microphone => host.default_input_device(),
+                Kind::Loopback => host.default_output_device(),
+            }?;
+            let default_id = stand_in.id().ok()?.to_string();
+            // If the real device cannot be found in the list (it just changed), the stand-in still works.
+            with_id(&default_id).or(Some(stand_in))
         }
     }
 }

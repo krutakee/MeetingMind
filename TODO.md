@@ -50,7 +50,7 @@ later phases are expanded when they start. Phase 1 is done (2026-10-16). Phase 2
 - [x] Update CLAUDE.md "Commands" with the commands actually verified.
 - [x] Run all tests, commit, write the phase report (what works / doesn't / blocked / machine used), stop.
 
-## Phase 2 — Windows recording (plan approved 2026-10-16; M0 to M4 done except the real-microphone unplug check)
+## Phase 2 — Windows recording (plan approved 2026-10-16; M0 to M4 done, all four acceptance criteria met on 2026-10-17)
 Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.md). Milestones end with passing tests and a commit.
 
 - [x] **M0 Spikes (done 2026-10-16, results in docs/phase-2-spikes.md):** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);
@@ -67,11 +67,12 @@ Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.
       should avoid cloud-synced folders (it is inside OneDrive on this machine).
 - [x] **M4 Acceptance + docs (done 2026-10-17, see docs/phase-2-report.md):** soak and manual-check tooling, CI caches the FFmpeg download,
       phase report. Real-hardware testing also found and fixed lost and late screen frames (docs/phase-2-report.md Section 4).
-- [x] Acceptance: 2-hour drift < 100 ms and flat memory (two runs: -14.1 ms and -12.1 ms; memory -29.9 % and -0.4 %); kill-mid-recording
-      recoverable; control window not in the video (scripted check).
-- [ ] Acceptance: **mic unplug survives, on a real external microphone.** Passes with a synthetic one. Needs the user: an external USB or
-      3.5 mm microphone (or headset) and someone to unplug it when `cargo test --test mic_unplug -- --ignored --nocapture` asks.
-- [ ] Decide: should the final code get a third full 2-hour run (the relay was validated for 20 and 40 minutes)?
+- [x] Acceptance: 2-hour drift < 100 ms and flat memory (three runs: -14.1, -12.1 and -21.5 ms; memory -29.9 %, -0.4 % and -17.0 %);
+      kill-mid-recording recoverable; control window not in the video (scripted check); mic unplug survives (a real USB headset; this
+      also found and fixed the system audio staying silent after the headset was plugged back in).
+- [ ] Not verified (docs/phase-2-report.md Section 7): the audio format conversion on a real device change; a headset plugged in while
+      paused or at the moment a recording starts; the tray menu, Quit and hide-on-close while recording, a shortcut held by another
+      program, Cancel in the native consent dialog. Restart the development computer (a Dell service leaks memory and breaks builds).
 
 ## Phase 3 — Live transcription (not started)
 - [ ] Bounded audio queues, 16 kHz mono resample for Whisper only, WebRTC echo cancellation, Silero VAD.
