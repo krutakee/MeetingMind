@@ -397,6 +397,9 @@ fn unplugging_the_microphone_keeps_the_recording_going_and_logs_the_gap() {
         Session::start(config(&rig, "Unplug", Mode::ScreenAudio), sources, rig.deps).unwrap();
     let folder = session.folder().to_path_buf();
     std::thread::sleep(Duration::from_millis(2000));
+    // The gap is judged against the media time at which the microphone was really unplugged, not against "two seconds
+    // after the start": on a loaded machine starting the session itself can take most of a second.
+    let unplugged_at = session.snapshot().elapsed_ms as f64 / 1000.0;
     plug.unplug();
     std::thread::sleep(Duration::from_millis(2500));
     let during = session.snapshot();
@@ -411,6 +414,7 @@ fn unplugging_the_microphone_keeps_the_recording_going_and_logs_the_gap() {
             .iter()
             .any(|w| w.kind == WarningKind::SourceLost && w.stream == Some(StreamKind::Microphone))
     );
+    let replugged_at = session.snapshot().elapsed_ms as f64 / 1000.0;
     plug.replug();
     std::thread::sleep(Duration::from_millis(2000));
     let outcome = session.stop().unwrap();
@@ -430,10 +434,15 @@ fn unplugging_the_microphone_keeps_the_recording_going_and_logs_the_gap() {
         .iter()
         .find(|g| g.stream == StreamKind::Microphone && g.reason == GapReason::DeviceLost)
         .unwrap_or_else(|| panic!("no device-lost gap in {:?}", metadata.gaps));
-    assert_close(Duration::from_millis(gap.start_ms), 2.0, 0.5, "gap start");
+    assert_close(
+        Duration::from_millis(gap.start_ms),
+        unplugged_at,
+        0.5,
+        "gap start",
+    );
     assert_close(
         Duration::from_millis(gap.end_ms - gap.start_ms),
-        2.5,
+        replugged_at - unplugged_at,
         0.6,
         "gap length",
     );
