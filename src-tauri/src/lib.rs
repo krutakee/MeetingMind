@@ -35,13 +35,15 @@ fn resolve_paths(app: &tauri::AppHandle) -> Result<AppPaths, AppError> {
     let data_dir = path
         .app_data_dir()
         .map_err(|e| AppError::Paths(e.to_string()))?;
-    let documents_dir = path
-        .document_dir()
+    // The Downloads folder, not Documents: on many computers Documents is moved into OneDrive, which would upload every
+    // recording. The user can choose any other folder in Settings.
+    let downloads_dir = path
+        .download_dir()
         .map_err(|e| AppError::Paths(e.to_string()))?;
     Ok(AppPaths {
         log_dir: data_dir.join("logs"),
         db_path: data_dir.join("meetingmind.db"),
-        default_storage_folder: documents_dir.join("MeetingMind").join("Meetings"),
+        default_storage_folder: downloads_dir.join("MeetingMind"),
         data_dir,
     })
 }

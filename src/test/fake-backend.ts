@@ -33,7 +33,7 @@ export const DEFAULT_INFO: AppInfo = {
   dataDir: 'C:\\Users\\test\\AppData\\Roaming\\com.meetingmind.desktop',
   logDir: 'C:\\Users\\test\\AppData\\Roaming\\com.meetingmind.desktop\\logs',
   dbPath: 'C:\\Users\\test\\AppData\\Roaming\\com.meetingmind.desktop\\meetingmind.db',
-  defaultStorageFolder: 'C:\\Users\\test\\Documents\\MeetingMind\\Meetings',
+  defaultStorageFolder: 'C:\\Users\\test\\Downloads\\MeetingMind',
   schemaVersion: 2,
   startupError: null,
   startupWarnings: [],
@@ -91,7 +91,7 @@ export const DEFAULT_ESTIMATE: Estimate = {
   videoWidth: 1920,
   videoHeight: 1080,
   freeBytes: 200 * 1024 ** 3,
-  storageFolder: 'C:\\Users\\test\\Documents\\MeetingMind\\Meetings',
+  storageFolder: 'C:\\Users\\test\\Downloads\\MeetingMind',
   storageSyncedBy: null,
 }
 
@@ -121,8 +121,8 @@ export const RECORDING_STATUS: RecorderStatus = {
 export const FINISHED: Finished = {
   meetingId: 7,
   title: 'Weekly sync',
-  folder: 'C:\\Users\\test\\Documents\\MeetingMind\\Meetings\\2026-10-16_0905_Weekly sync',
-  file: 'C:\\Users\\test\\Documents\\MeetingMind\\Meetings\\2026-10-16_0905_Weekly sync\\recording.mp4',
+  folder: 'C:\\Users\\test\\Downloads\\MeetingMind\\2026-10-16_0905_Weekly sync',
+  file: 'C:\\Users\\test\\Downloads\\MeetingMind\\2026-10-16_0905_Weekly sync\\recording.mp4',
   durationMs: 1_800_000,
   hasVideo: true,
 }

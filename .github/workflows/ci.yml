@@ -49,6 +49,15 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      # The FFmpeg download is kept between runs. The key is the fetch script, which holds the pinned build, so a new pin
+      # fetches again. A restored file is never trusted: the script checks its SHA-256 and downloads again if it differs.
+      - name: Cache FFmpeg
+        if: runner.os == 'Windows'
+        uses: actions/cache@v6
+        with:
+          path: src-tauri/binaries
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('scripts/fetch-ffmpeg.mjs') }}
+
       # The pinned, checksum-verified LGPL FFmpeg used by the recording tests (Windows only for now).
       - name: Install FFmpeg
         if: runner.os == 'Windows'
