@@ -122,8 +122,9 @@ playback. Details of M3 are in phase-2-plan.md ("What M3 settled").
 - On the real devices, run by hand: 8 hardware smoke tests, the soak (`tests/soak.rs`), the control-window check
   (`scripts/manual-checks`), and driving the real app (shortcuts, tray window, consent dialog, preview, playback,
   recovery), none of which CI can do.
-- CI: green on Windows and macOS for the M3 code (run 38994685401); the runs for the M4 commits are listed in the
-  commit history.
+- CI: green on Windows and macOS for the final commit (4533d81, run 39020527704). One earlier run failed on a timing
+  assumption in a synthetic-microphone test (it expected the unplug at 2.0 s after the start, and starting the session
+  took most of a second on a loaded runner); the test now reads the real media time, and nothing in the recorder changed.
 
 ## 7. What does not work, and what is blocked
 
