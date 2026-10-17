@@ -1,7 +1,7 @@
 # Phase 2 plan — Windows recording
 
 **Status: approved 2026-10-16. M0 (spikes) is done; its results are in [phase-2-spikes.md](phase-2-spikes.md) and are
-applied below. M1 and M2 are done (Section 8). Next: M3. Hotkeys changed in review: see Section 10.**
+applied below. M1, M2 and M3 are done (Section 8). Next: M4. Hotkeys changed in review: see Section 10.**
 Scope and acceptance criteria come from SPEC.md Sections 5 and 11 and do not change here. This document says how
 they will be met, what was checked, what is still unverified, and what needs a decision.
 
@@ -165,10 +165,11 @@ Own windows are excluded with `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`
 All are license-checked and added to `LICENSES.md` with `pnpm licenses:generate`, and each must be maintained and
 compatible with Tauri 2 before it is added.
 
-Rust: `cpal`, `windows-capture`, `windows` (specific features only), `libc` (macOS local time), an image encoder for preview frames (cpal, windows-capture, windows, libc and sysinfo's disk feature are in since M1 and M2; the rest arrive in M3),
-`tauri-plugin-global-shortcut`, `tauri-plugin-single-instance`, `tauri-plugin-opener`, Tauri features for the tray icon,
-and `sysinfo`'s disk feature. Single-instance is added so two copies of the app cannot both record or fight over the
-database. Frontend: none expected.
+Rust, all in now: `cpal`, `windows-capture`, `windows` (specific features only), `libc` (macOS local time), `sysinfo`'s
+disk feature (M1, M2), `tauri-plugin-global-shortcut`, `tauri-plugin-single-instance`, `tauri-plugin-opener` and Tauri's
+`tray-icon` and `protocol-asset` features (M3). Single-instance is added so two copies of the app cannot both record or
+fight over the database. Frontend: none (the plan expected none, and none was needed: dialogs use the browser's own
+`<dialog>`). No image encoder was needed either: see "What M3 settled".
 
 ## 7. Tests
 
@@ -205,7 +206,7 @@ Each step ends with passing tests and a commit. I stop and report if a step brea
 | M0 Spikes (**done 2026-10-16**) | FFmpeg download, license and encoder check; a few seconds of real capture; mic and loopback timestamps and device formats; a 10-minute drift measurement. Findings in `docs/phase-2-spikes.md`. | No assumption failed. One refinement: encoder order (see Section 3). |
 | M1 Core (**done 2026-10-16**) | Everything that needs no hardware: clock, state machine, pacer, drift correction, folder layout, `meeting.json`, migration 0002, disk guard, FFmpeg manager, synthetic sources, end-to-end and recovery tests. | Tests green locally (174 Rust tests, FFmpeg required) and in CI. |
 | M2 Windows sources (**done 2026-10-16**) | Real capture and audio, sleep guard, window exclusion, session events, disk space, capability probe updates. | Smoke recordings on this machine: passed (see "What M2 settled"). |
-| M3 UI | Record screen, control window, tray, hotkeys, consent, banners, recovery prompt, playback. | Vitest plus a manual pass. |
+| M3 UI (**done 2026-10-17**) | Record screen, control window, tray, hotkeys, consent, banners, recovery prompt, playback. | Vitest, Rust end-to-end tests, and a manual pass driving the real app (see "What M3 settled"). |
 | M4 Acceptance | The four criteria above, docs, `LICENSES.md`, CI changes (fetch and cache the sidecar, run FFmpeg tests on the Windows runner). | Phase report. |
 
 CI note: the Windows runner downloads the pinned FFmpeg (`pnpm fetch:ffmpeg`, checksum-verified) and runs the tests with
@@ -281,6 +282,60 @@ not reopened), and whether `WithoutBorder` really removes the border Windows dra
 Measured or simulated in M1: two simulated hours with a device clock 20 ppm fast or slow stay within 20 ms of media
 time (simulation, not real hardware). A process killed hard mid-recording (with its FFmpeg children) is recovered into
 one playable file in 5 of 5 repeated runs.
+
+### What M3 settled
+
+Built: the Record screen (monitor, microphone, system audio, quality, frame rate, presets, live preview, an upper-bound
+estimate of disk use per hour with the free space), the consent dialog, the recording panel (time, levels, pause,
+resume, stop, discard with confirmation, warnings), "Recording saved" with Play and Open folder, the ten most recent
+recordings, the recovery prompt, playback inside the app, the always-on-top control window, the tray icon, the two
+global shortcuts (configurable in Settings), single instance, saving a running recording before the app quits, and
+the video-encoder row of the capability table from the real FFmpeg. All recording logic is in `recorder.rs` (no UI
+framework, no OS calls); `shell/` is the thin Tauri layer around it.
+
+Differences from the plan, and why:
+- **Quality presets are real.** The recording core had no scaling, so "1080p by default" was not yet true. FFmpeg now
+  scales down (never up) to 720 or 1080 rows, or keeps the monitor's size. `meeting.json` describes the file.
+- **No image encoder.** The preview is sent as raw RGBA, 640 pixels wide (blocks of pixels averaged), over the IPC
+  bridge and drawn on a canvas. No extra dependency, and a frame costs about 0.9 MB.
+- **No dialog library.** Modals use the browser's `<dialog>`.
+- **`tauri-plugin-opener` is used as a library only** (to open a meeting folder inside the storage folder), not
+  registered as a plugin, so the web page has no direct access to it.
+- **Nothing is silently left out.** If a chosen monitor or microphone cannot be opened, the recording does not start
+  and says which one. (What fails after the recording has started still only raises a warning.)
+- Added from SPEC: **Discard** (cancel) with a confirmation.
+
+Found by driving the real app, and fixed:
+- **The drift estimate could be fooled by a gap.** Real recording with a pause, about a minute long: `meeting.json` had 71
+  `audioOverlap` errors and a drift of about -13000 ppm. The silence inserted when the devices restart after a pause
+  (about 0.5 s) is not audio the device delivered, so over a 60 s window it read as a clock 1.3 % slow; the audio was
+  stretched by that much and the surplus trimmed once a second. A gap now restarts the measurement, and an estimate no
+  device clock could produce (beyond 2000 ppm) is reported but never applied. Reproduced by unit tests first (three of
+  four failed before the fix); the same scenario on the real devices then gave 0 errors. The M1 simulations had no
+  pause, which is why they missed it.
+- **The preview could end up off.** React's development mode sends start, stop, start at once; backend commands run on a
+  thread pool in no promised order. Preview start and stop now go through one queue.
+- **The default storage folder here is inside OneDrive.** Documents is redirected, and a recording was turned into a
+  cloud-only placeholder within minutes. MeetingMind sends nothing itself, but the video and sound of a meeting were
+  uploaded. The Record screen and Settings now warn when the storage folder is under OneDrive, Dropbox, Google Drive or
+  iCloud Drive (judged from the path). The default folder is unchanged. **Decision for the user:** should the default
+  avoid synced folders?
+
+Checked on the real app (IV-LT-Han, Windows 11 build 26200, driven through its own WebView2 over the DevTools protocol
+and with synthetic key presses; the test recordings were deleted afterwards): start, pause, resume and stop by the
+shortcuts; the consent dialog; the control window (top centre, drawn correctly) and `WDA_EXCLUDEFROMCAPTURE` set on it
+and on the main window while recording, removed afterwards; the control window absent from the recorded frame (one
+visual check of the cropped region; the scripted pixel test is M4); the tray icon and shortcut windows created; a
+second launch exiting at once and leaving one process; the live preview with correct colours; playback through the asset protocol
+in WebView2 (ready state 4, no error, 1920x1080); the capability table (real encoder, system audio, exclusion); a hard
+kill mid-recording, then the recovery dialog and recovery through the UI (12.2 s recovered, tracks within 20 ms,
+`recovered: true`).
+
+**Not verified yet** (implemented, never exercised on a real desktop): clicking the tray menu entries and seeing the
+icon states; Quit and hide-on-close while recording; a shortcut already owned by another program (the backend message
+is built and the UI shows a backend refusal, tested with a stand-in; nothing real held the key); Cancel in the native
+consent dialog; macOS (stubs only, compiled in CI). **Known limit:** after a pause, the microphone and system-audio tracks
+are silent for about 0.5 s while the devices restart (listed in `meeting.json` as a gap).
 
 ## 9. Risks
 

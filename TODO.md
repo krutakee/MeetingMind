@@ -50,7 +50,7 @@ later phases are expanded when they start. Phase 1 is done (2026-10-16). Phase 2
 - [x] Update CLAUDE.md "Commands" with the commands actually verified.
 - [x] Run all tests, commit, write the phase report (what works / doesn't / blocked / machine used), stop.
 
-## Phase 2 — Windows recording (plan approved 2026-10-16; M0, M1 and M2 done, M3 next)
+## Phase 2 — Windows recording (plan approved 2026-10-16; M0 to M3 done, M4 next)
 Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.md). Milestones end with passing tests and a commit.
 
 - [x] **M0 Spikes (done 2026-10-16, results in docs/phase-2-spikes.md):** FFmpeg download + SHA-256 + license/encoder check (`h264_mf`, `libopenh264`, `aac`, `flac`, no `--enable-gpl`);
@@ -61,8 +61,10 @@ Design, findings, risks and decisions: [docs/phase-2-plan.md](docs/phase-2-plan.
 - [x] **M2 Windows sources (done 2026-10-16, see docs/phase-2-plan.md "What M2 settled"):** `capture` (WGC) and `audio` (cpal mic + loopback) implementations; sleep guard; own-window
       exclusion (only while recording); session lock events; free disk space; capability probe fills system audio,
       capture exclusion, video encoders.
-- [ ] **M3 UI:** Record screen (setup, monitor preview, presets, estimates), always-on-top control window, tray icon, global
+- [x] **M3 UI (done 2026-10-17, see docs/phase-2-plan.md "What M3 settled"):** Record screen (setup, monitor preview, presets, estimates), always-on-top control window, tray icon, global
       hotkeys, consent dialog, warning banners, recovery prompt, playback + 10 recent recordings, single-instance.
+      Open: the tray menu and a taken shortcut were not exercised on a real desktop; decide whether the default storage folder
+      should avoid cloud-synced folders (it is inside OneDrive on this machine).
 - [ ] **M4 Acceptance + docs:** the four criteria below, `LICENSES.md`, CI (fetch/cache sidecar, FFmpeg tests on Windows runner), phase report.
 - [ ] Acceptance: 2-hour drift < 100 ms and flat memory; kill-mid-recording recoverable; mic unplug survives; control window not in video.
       Needs from the user: 2+ hours of idle machine time, and an external USB/3.5 mm microphone to unplug.

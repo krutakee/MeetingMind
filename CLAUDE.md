@@ -31,7 +31,10 @@ The frontend `dist/` folder (repo root) must exist before any cargo command: run
 - Frontend typecheck/lint: `pnpm typecheck`, `pnpm lint`
 - Hardware smoke tests (real monitor, microphone, speakers; a magenta window and a quiet tone appear): from
   `src-tauri/`, `cargo test --test hardware_smoke -- --ignored --nocapture --test-threads=1`
-- Install the pinned FFmpeg sidecar for the recording tests: `pnpm fetch:ffmpeg` (checksum-verified, Windows only for now)
+- Install the pinned FFmpeg sidecar: `pnpm fetch:ffmpeg` (checksum-verified, Windows only for now). Needed before ANY cargo
+  command on Windows: `tauri.windows.conf.json` bundles it, and the build stops if the file is missing.
+- Run the app by hand: `pnpm tauri dev` (starts Vite and the app). With `cargo run` alone the window stays empty unless
+  `pnpm dev` (Vite, port 1420) is running. Close the app before `cargo test`: a running `meetingmind.exe` locks the file.
 - Rust tests: `cargo test --workspace` (run from `src-tauri/`). The real-FFmpeg tests skip if FFmpeg is missing; set
   `REQUIRE_FFMPEG=1` to make that a failure (CI does, on Windows). Test doubles live behind the `test-doubles` feature,
   which `cargo test` turns on by itself; the app never contains them.
@@ -43,7 +46,9 @@ Phase 1 delivered: Tauri + React app, navigation, settings, SQLite with migratio
 skeleton, CI on Windows and macOS. Acceptance: app launches on Windows (checked locally); CI green on `windows-latest`
 and `macos-latest` (run 38941862010, commit f1edde7); migration tests pass (locally and in CI).
 
-Phase 2 plan approved 2026-10-16: docs/phase-2-plan.md (work starts with the M0 spikes). Scope and acceptance criteria are in
+Phase 2 status: M0 to M3 done (2026-10-17). M4 (acceptance: 2-hour drift and memory, kill-and-recover, mic unplug with a
+real external microphone, control window absent from the video by a scripted check, CI sidecar cache, phase report) is next.
+Plan approved 2026-10-16: docs/phase-2-plan.md. Scope and acceptance criteria are in
 SPEC.md Section 11 and ROADMAP.md. Per phase: run tests, commit, report what works / what doesn't / what's blocked, STOP.
 
 ## Architecture rules

@@ -44,7 +44,7 @@ removed. Wall-clock times are RFC 3339 in UTC.
 | `durationMs` | number or null | Length of the saved media. Null until the recording ends. |
 | `status` | string | `recording`, `finalizing`, `complete`, `failed` or `cancelled`. |
 | `recovered` | boolean | True if the app found this recording unfinished after a crash and recovered it. |
-| `video` | object or null | Monitor device name, pixel size, frame rate, encoder used. Null in audio-only mode. |
+| `video` | object or null | Monitor device name, frame rate, encoder used, and `width` x `height`: the size of the video in the file, which is smaller than the monitor when the quality setting scaled it down. Null in audio-only mode. |
 | `microphone`, `systemAudio` | object or null | Device name, sample rate, channels, `startOffsetMs` (silence added at the start because the device delivered its first data late), `driftPpm` (measured device clock error, or null if not measured). Null if that source was off. |
 | `pauses` | array | Each pause: `atMediaMs` (the cut point in the saved media) and `wallLengthMs` (how long it lasted; this time is not in the files). |
 | `gaps` | array | Stretches where a stream has silence (audio) or black (video) instead of real content. |
